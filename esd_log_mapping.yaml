@@ -1,0 +1,92 @@
+aliases:
+  week_ending:
+    - "Job-search log for week ending (Month/Day/Year) MM/DD/YYYY"
+    - "job-search-week"
+  name:
+    - "Jobsearch log for week ending MonthDayYear"
+  id_or_ssn: ["ID or SSN"]
+
+  c1.date: ["EMPLOYER CONTACTS AND JOB SEARCH ACTIVITIES"]
+  c1.job_title_or_ref: ["Job title or job reference number"]
+  c1.employer: ["Employer or business name"]
+  c1.address: ["Employer or business contact information"]
+  c1.city: ["Address"]
+  c1.state: ["State", "State2", "State_2"]
+  c1.website_or_email: ["Website or email address"]
+  c1.phone: ["Phone number"]
+  c1.what_activity: ["What activity did you complete", "What activity did you complete_2"]
+  c1.documentation: ["What documentation do you have", "What documentation do you have_2"]
+  c1.office_name: ["Office name"]
+
+  c2.date: ["Contact Date (MM/DD/YYYY)", "Contact Date MMDDYYYY"]
+  c2.job_title_or_ref: ["Job title or job reference number_2"]
+  c2.employer: ["Employer or business name_2"]
+  c2.address: ["Employer or business contact information"]
+  c2.city: ["Address"]
+  c2.state: ["State2", "State_4"]
+  c2.website_or_email: ["Website or email address2"]
+  c2.phone: ["Phone number2"]
+  c2.what_activity: ["What activity did you complete_3", "What activity did you complete_4"]
+  c2.documentation: ["What documentation do you have_3", "What documentation do you have_4"]
+  c2.office_name: ["Office name_2", "Where did you complete this activity_2"]
+
+  c3.date: ["Keep this log for your records"]
+  c3.job_title_or_ref: ["Job title or job reference number_3"]
+  c3.employer: ["Employer or business name_3"]
+  c3.address: ["Employer or business contact information"]
+  c3.city: ["Address"]
+  c3.state: ["State3", "State_6"]
+  c3.website_or_email: ["Website or email address3", "Website or email address_3"]
+  c3.phone: ["Website or email address"]
+  c3.what_activity: ["What activity did you complete_5", "What activity did you complete_6"]
+  c3.documentation: ["What documentation do you have_5", "What documentation do you have_6"]
+  c3.office_name: ["Office name_3", "Where did you complete this activity_3"]
+
+checkboxes:
+  c1.kind:
+    Employer contact: "EMPLOYER CONTACTS AND JOB SEARCH ACTIVITIES"
+    WorkSource activity: "Activity"
+    Other activity: "other contact"
+  c2.kind:
+    Employer contact: "EMPLOYER CONTACTS AND JOB SEARCH ACTIVITIES"
+    WorkSource activity: "Activity2"
+    Other activity: "Other contact2"
+  c3.kind:
+    Employer contact: "EMPLOYER CONTACTS AND JOB SEARCH ACTIVITIES"
+    WorkSource activity: "Activity3"
+    Other activity: "Other contact3"
+
+  c1.method:
+    In-person: "In-person"
+    Online: "Online"
+    By phone: "By phone"
+    By email: "By email"
+    By mail: "By mail"
+    Other: "Other"
+  c2.method:
+    In-person: "In-person-2"
+    Online: "Online-2"
+    By phone: "By phone-2"
+    By email: "By email-2"
+    By mail: "By mail-2"
+    Other: "Other-2"
+  c3.method:
+    In-person: "In-person-3"
+    Online: "Online-3"
+    By phone: "By phone-3"
+    By email: "By email-3"
+    By mail: "By mail-3"
+    Other: "Other-3"
+
+  c1.type:
+    Application/resume: "Type of Contact"
+    Interview: "Type of Contact"
+    Inquiry: "Type of Contact"
+  c2.type:
+    Application/resume: "Type of Contact2"
+    Interview: "Type of Contact2"
+    Inquiry: "Type of Contact2"
+  c3.type:
+    Application/resume: "Type of contact3"
+    Interview: "Type of contact3"
+    Inquiry: "Type of contact3"
