@@ -1,31 +1,30 @@
 from __future__ import annotations
-
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, BooleanObject, DictionaryObject
 import argparse, yaml, sys
 from typing import Any, Dict, List
 
+# ----------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------
+
 
 def clone_form(reader: PdfReader, writer: PdfWriter) -> None:
     """
-    Ensure the PdfWriter contains the full AcroForm (/Fields tree),
-    so update_page_form_field_values works reliably.
+    Copy the AcroForm (/Fields) tree into the writer
+    so update_page_form_field_values works.
     """
     try:
         writer.clone_document_from_reader(reader)  # pypdf >= 4.0
     except Exception:
-        # Fallback for older versions
+        writer.append_pages_from_reader(reader)
         acro = reader.trailer["/Root"].get("/AcroForm")
         if acro is not None:
-            writer.append_pages_from_reader(reader)
             writer._root_object[NameObject("/AcroForm")] = writer._add_object(acro)
-        else:
-            writer.append_pages_from_reader(reader)
 
 
 def set_need_appearances(writer: PdfWriter) -> None:
-    # Ensure values render in some viewers
     if "/AcroForm" not in writer._root_object:
         writer._root_object.update(
             {NameObject("/AcroForm"): writer._add_object(DictionaryObject())}
@@ -40,9 +39,43 @@ def set_text(
 ) -> None:
     if not field_name or field_name not in fields:
         return
-    if value is None:
-        value = ""
-    writer.update_page_form_field_values(page, {field_name: str(value)})
+    writer.update_page_form_field_values(
+        page, {field_name: "" if value is None else str(value)}
+    )
+
+
+def _collect_on_states(obj) -> List[str]:
+    states = []
+    if obj is None or "/AP" not in obj:
+        return states
+    ap = obj["/AP"]
+    n = ap.get("/N")
+    if hasattr(n, "keys"):
+        for k in n.keys():
+            ks = str(k)
+            if ks not in ("/Off", "Off"):
+                states.append(ks.lstrip("/"))
+    return states
+
+
+def detect_on_state(fields: Dict[str, Any], field_name: str) -> str:
+    on_states: List[str] = []
+    try:
+        fobj = fields[field_name]
+        try:
+            fobj = fobj.get_object()
+        except Exception:
+            pass
+        on_states.extend(_collect_on_states(fobj))
+        if "/Kids" in fobj:
+            for kid in fobj["/Kids"]:
+                try:
+                    on_states.extend(_collect_on_states(kid.get_object()))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return on_states[0] if on_states else "Yes"
 
 
 def set_checkbox(
@@ -50,16 +83,71 @@ def set_checkbox(
 ) -> None:
     if not field_name or field_name not in fields:
         return
-    writer.update_page_form_field_values(page, {field_name: "Yes" if on else "Off"})
+    on_value = detect_on_state(fields, field_name)
+    writer.update_page_form_field_values(
+        page, {field_name: (f"/{on_value}" if on else "/Off")}
+    )
+
+
+def _radio_on_values(fields: dict, group_name: str) -> list[str]:
+    vals = []
+    try:
+        fobj = fields[group_name]
+        try:
+            fobj = fobj.get_object()
+        except Exception:
+            pass
+        if "/Kids" in fobj:
+            for kid in fobj["/Kids"]:
+                try:
+                    ko = kid.get_object()
+                    n = ko.get("/AP", {}).get("/N")
+                    if hasattr(n, "keys"):
+                        for k in n.keys():
+                            s = str(k).lstrip("/")
+                            if s and s.lower() != "off":
+                                vals.append(s)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    seen, out = set(), []
+    for v in vals:
+        if v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def set_radio_group(
+    page, writer: PdfWriter, fields: dict, group_name: str, desired: str | None
+) -> None:
+    if not desired or group_name not in fields:
+        return
+    opts = _radio_on_values(fields, group_name)
+    dl = desired.strip().lower()
+    # exact match
+    for o in opts:
+        if o.lower() == dl:
+            writer.update_page_form_field_values(page, {group_name: f"/{o}"})
+            return
+    # contains match
+    for o in opts:
+        if dl in o.lower():
+            writer.update_page_form_field_values(page, {group_name: f"/{o}"})
+            return
+    # fallback
+    if opts:
+        writer.update_page_form_field_values(page, {group_name: f"/{opts[0]}"})
 
 
 def first_page(writer: PdfWriter):
     return writer.pages[0]
 
 
-# ---------------------------
-# Main filler
-# ---------------------------
+# ----------------------------------------------------------
+# Contact filling
+# ----------------------------------------------------------
 
 CONTACT_METHOD_FIELDS = [
     ("In-person", "contact-in-person"),
@@ -70,29 +158,13 @@ CONTACT_METHOD_FIELDS = [
     ("Other", "contact-other"),
 ]
 
-CONTACT_TYPE_MAP = {
-    # For "cX-contact-type" (string). If "Other", fill cX-contact-type-other as well.
-    "application/resume": "Application/resume",
-    "interview": "Interview",
-    "inquiry": "Inquiry",
-    "other": "Other",
-}
-
 
 def fill_contact_block(
-    idx: int,
-    contact: Dict[str, Any],
-    page,
-    writer: PdfWriter,
-    fields: Dict[str, Any],
+    idx: int, contact: Dict[str, Any], page, writer: PdfWriter, fields: Dict[str, Any]
 ) -> None:
-    """
-    Map data -> simplified field names for contact 1..3.
-    idx is 1, 2, or 3.
-    """
     px = f"c{idx}-"
 
-    # Common text fields for employer contact section
+    # Text fields
     set_text(page, writer, fields, px + "contact-date", contact.get("date"))
     set_text(page, writer, fields, px + "job-title", contact.get("job_title"))
     set_text(page, writer, fields, px + "business-name", contact.get("business_name"))
@@ -108,16 +180,9 @@ def fill_contact_block(
     )
     set_text(page, writer, fields, px + "employer-phone", contact.get("phone"))
 
-    # Contact method checkboxes (zero/one/many)
+    # Contact methods (checkboxes)
     method_raw = contact.get("contact_method")
-    # Accept single string or list of strings
-    if isinstance(method_raw, str):
-        methods = [method_raw]
-    elif isinstance(method_raw, list):
-        methods = method_raw
-    else:
-        methods = []
-
+    methods = [method_raw] if isinstance(method_raw, str) else (method_raw or [])
     for label, suffix in CONTACT_METHOD_FIELDS:
         field_name = f"{px}{suffix}"
         set_checkbox(
@@ -128,22 +193,31 @@ def fill_contact_block(
             any(label.lower() in (m or "").lower() for m in methods),
         )
 
-    # Contact type (choose one, but we'll be tolerant)
-    ctype = (contact.get("contact_type") or "").strip().lower()
-    if ctype:
-        display = CONTACT_TYPE_MAP.get(ctype, contact.get("contact_type"))
-        set_text(page, writer, fields, px + "contact-type", display)
-        if "other" in ctype:
-            set_text(
-                page,
-                writer,
-                fields,
-                px + "contact-type-other",
-                contact.get("contact_type_other"),
-            )
+    # Activity radio group
+    activity = (contact.get("activity_choice") or "").strip().lower()
+    if activity in ("employer", "employer contact"):
+        activity = "employer-contact"
+    if activity in ("worksource", "worksource activity"):
+        activity = "worksource-activity"
+    if activity in ("other", "other activity"):
+        activity = "other-activity"
+    set_radio_group(page, writer, fields, px + "activity", activity)
 
-    # WorkSource activity (if provided)
-    # kind (string), documentation (string), office and location
+    # Contact type radio group
+    ctype = (contact.get("contact_type") or "").strip().lower()
+    if ctype in ("application", "application/resume", "application_resume", "resume"):
+        ctype = "application-resume"
+    set_radio_group(page, writer, fields, px + "contact-type", ctype)
+    if ctype == "other" and "contact_type_other" in contact:
+        set_text(
+            page,
+            writer,
+            fields,
+            px + "contact-type-other",
+            contact.get("contact_type_other"),
+        )
+
+    # WorkSource activity
     set_text(
         page,
         writer,
@@ -180,7 +254,7 @@ def fill_contact_block(
         contact.get("worksource_activity_state"),
     )
 
-    # Other activity (if provided)
+    # Other activity
     set_text(
         page,
         writer,
@@ -196,22 +270,22 @@ def fill_contact_block(
         contact.get("other_activity_documentation"),
     )
 
-    # Generic "activity" (if you store a simple description)
+    # Generic description
     set_text(page, writer, fields, px + "activity", contact.get("activity"))
 
 
+# ----------------------------------------------------------
+# Main
+# ----------------------------------------------------------
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Fill WA ESD PDF (simplified field names)."
-    )
-    parser.add_argument(
-        "pdf_in", help="Renamed/cleaned WA ESD PDF (with simplified field names)"
-    )
+    parser = argparse.ArgumentParser(description="Fill WA ESD PDF (clean field names).")
+    parser.add_argument("pdf_in", help="Renamed/cleaned WA ESD PDF")
     parser.add_argument("yaml_in", help="Weekly YAML data file")
     parser.add_argument("pdf_out", help="Output filled PDF")
     args = parser.parse_args()
 
-    # Load data
     with open(args.yaml_in, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
@@ -222,7 +296,6 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    # Read + prepare PDF
     reader = PdfReader(args.pdf_in)
     writer = PdfWriter()
     clone_form(reader, writer)
@@ -242,12 +315,11 @@ def main() -> None:
         data.get("week_ending") or data.get("week-ending"),
     )
 
-    # Contacts 1..3 (fill only if present)
+    # Contacts
     for idx in (1, 2, 3):
         c = contacts[idx - 1] if len(contacts) >= idx else {}
         fill_contact_block(idx, c, page, writer, fields)
 
-    # Save
     with open(args.pdf_out, "wb") as out_f:
         writer.write(out_f)
 

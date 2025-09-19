@@ -4,6 +4,7 @@ week_ending: "09/27/2025"
 
 contacts:
   - date: "09/22/2025"
+    activity_choice: "employer contact"
     job_title: "Senior .NET Engineer"
     business_name: "Evergreen Tech Solutions"
     address: "4250 Innovation Way"
@@ -12,9 +13,10 @@ contacts:
     website_or_email: "https://www.evergreentechsolutions.com/jobs/42"
     phone: "(425) 555-1212"
     contact_method: ["Online"]
-    contact_type: "Application/resume"
+    contact_type: "application/resume"
 
   - date: "09/23/2025"
+    activity_choice: "employer contact"
     job_title: ".NET Engineer"
     business_name: "Cascade Data Systems"
     address: "9800 Rainier Ave S"
@@ -23,9 +25,10 @@ contacts:
     website_or_email: "https://www.cascadedata.io"
     phone: "(206) 555-9876"
     contact_method: [ "Online" ]
-    contact_type: "Application/resume"
+    contact_type: "application/resume"
 
   - date: "09/24/2025"
+    activity_choice: "employer contact"
     job_title: "Principal Engineer"
     business_name: "Northwest Cloudworks"
     address: "210 Lakeview Blvd E"
@@ -34,4 +37,4 @@ contacts:
     website_or_email: "https://www.nwcloudworks.com"
     phone: "(425) 555-4433"
     contact_method: [ "Online" ]
-    contact_type: "Application/resume"
+    contact_type: "application/resume"
