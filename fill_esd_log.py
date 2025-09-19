@@ -1,32 +1,31 @@
-"""Command-line interface for filling a weekly job-search log PDF form."""
+from __future__ import annotations
 
-import argparse
-import yaml
 from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, BooleanObject, DictionaryObject
+import argparse, yaml, sys
+from typing import Any, Dict, List
 
 
-def load_mapping(path: str):
-    """Load field aliases and checkbox mappings from a YAML file.
-
-    Args:
-        path (str): Path to the YAML mapping file.
-
-    Returns:
-        tuple: (aliases dict, checkboxes dict)
+def clone_form(reader: PdfReader, writer: PdfWriter) -> None:
     """
-    with open(path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    return config.get("aliases", {}), config.get("checkboxes", {})
-
-
-def _set_need_appearances(writer: PdfWriter):
-    """Ensure the PDF writer sets the /NeedAppearances flag for AcroForm
-    fields.
-
-    Args:
-        writer (PdfWriter): The PDF writer object.
+    Ensure the PdfWriter contains the full AcroForm (/Fields tree),
+    so update_page_form_field_values works reliably.
     """
+    try:
+        writer.clone_document_from_reader(reader)  # pypdf >= 4.0
+    except Exception:
+        # Fallback for older versions
+        acro = reader.trailer["/Root"].get("/AcroForm")
+        if acro is not None:
+            writer.append_pages_from_reader(reader)
+            writer._root_object[NameObject("/AcroForm")] = writer._add_object(acro)
+        else:
+            writer.append_pages_from_reader(reader)
+
+
+def set_need_appearances(writer: PdfWriter) -> None:
+    # Ensure values render in some viewers
     if "/AcroForm" not in writer._root_object:
         writer._root_object.update(
             {NameObject("/AcroForm"): writer._add_object(DictionaryObject())}
@@ -36,148 +35,226 @@ def _set_need_appearances(writer: PdfWriter):
     )
 
 
-def _find_field(form_fields: dict, candidates: list[str]) -> str | None:
-    """Find the first matching field name from candidates in the form fields.
+def set_text(
+    page, writer: PdfWriter, fields: Dict[str, Any], field_name: str, value: Any
+) -> None:
+    if not field_name or field_name not in fields:
+        return
+    if value is None:
+        value = ""
+    writer.update_page_form_field_values(page, {field_name: str(value)})
 
-    Args:
-        form_fields (dict): Dictionary of form fields.
-        candidates (list[str]): List of candidate field names.
 
-    Returns:
-        str | None: The first matching field name, or None if not found.
+def set_checkbox(
+    page, writer: PdfWriter, fields: Dict[str, Any], field_name: str, on: bool
+) -> None:
+    if not field_name or field_name not in fields:
+        return
+    writer.update_page_form_field_values(page, {field_name: "Yes" if on else "Off"})
+
+
+def first_page(writer: PdfWriter):
+    return writer.pages[0]
+
+
+# ---------------------------
+# Main filler
+# ---------------------------
+
+CONTACT_METHOD_FIELDS = [
+    ("In-person", "contact-in-person"),
+    ("Online", "contact-online"),
+    ("By phone", "contact-by-phone"),
+    ("By email", "contact-by-email"),
+    ("By mail", "contact-by-mail"),
+    ("Other", "contact-other"),
+]
+
+CONTACT_TYPE_MAP = {
+    # For "cX-contact-type" (string). If "Other", fill cX-contact-type-other as well.
+    "application/resume": "Application/resume",
+    "interview": "Interview",
+    "inquiry": "Inquiry",
+    "other": "Other",
+}
+
+
+def fill_contact_block(
+    idx: int,
+    contact: Dict[str, Any],
+    page,
+    writer: PdfWriter,
+    fields: Dict[str, Any],
+) -> None:
     """
-    for c in candidates:
-        if c in form_fields:
-            return c
-    return None
-
-
-def _set_text(page, writer, form_fields, aliases, key, value):
-    """Set a text field value in the PDF form.
-
-    Args:
-        page: The PDF page object.
-        writer: The PDF writer object.
-        form_fields (dict): Dictionary of form fields.
-        aliases (dict): Aliases mapping for field names.
-        key (str): Logical field key.
-        value: Value to set.
+    Map data -> simplified field names for contact 1..3.
+    idx is 1, 2, or 3.
     """
-    name = _find_field(form_fields, aliases.get(key, []))
-    if name and value is not None:
-        writer.update_page_form_field_values(page, {name: str(value)})
+    px = f"c{idx}-"
+
+    # Common text fields for employer contact section
+    set_text(page, writer, fields, px + "contact-date", contact.get("date"))
+    set_text(page, writer, fields, px + "job-title", contact.get("job_title"))
+    set_text(page, writer, fields, px + "business-name", contact.get("business_name"))
+    set_text(page, writer, fields, px + "employer-address", contact.get("address"))
+    set_text(page, writer, fields, px + "employer-city", contact.get("city"))
+    set_text(page, writer, fields, px + "employer-state", contact.get("state"))
+    set_text(
+        page,
+        writer,
+        fields,
+        px + "employer-website-or-email",
+        contact.get("website_or_email"),
+    )
+    set_text(page, writer, fields, px + "employer-phone", contact.get("phone"))
+
+    # Contact method checkboxes (zero/one/many)
+    method_raw = contact.get("contact_method")
+    # Accept single string or list of strings
+    if isinstance(method_raw, str):
+        methods = [method_raw]
+    elif isinstance(method_raw, list):
+        methods = method_raw
+    else:
+        methods = []
+
+    for label, suffix in CONTACT_METHOD_FIELDS:
+        field_name = f"{px}{suffix}"
+        set_checkbox(
+            page,
+            writer,
+            fields,
+            field_name,
+            any(label.lower() in (m or "").lower() for m in methods),
+        )
+
+    # Contact type (choose one, but we'll be tolerant)
+    ctype = (contact.get("contact_type") or "").strip().lower()
+    if ctype:
+        display = CONTACT_TYPE_MAP.get(ctype, contact.get("contact_type"))
+        set_text(page, writer, fields, px + "contact-type", display)
+        if "other" in ctype:
+            set_text(
+                page,
+                writer,
+                fields,
+                px + "contact-type-other",
+                contact.get("contact_type_other"),
+            )
+
+    # WorkSource activity (if provided)
+    # kind (string), documentation (string), office and location
+    set_text(
+        page,
+        writer,
+        fields,
+        px + "worksource-activity-kind",
+        contact.get("worksource_activity_kind"),
+    )
+    set_text(
+        page,
+        writer,
+        fields,
+        px + "worksource-activity-documentation",
+        contact.get("worksource_activity_documentation"),
+    )
+    set_text(
+        page,
+        writer,
+        fields,
+        px + "worksource-activity-office-name",
+        contact.get("worksource_activity_office_name"),
+    )
+    set_text(
+        page,
+        writer,
+        fields,
+        px + "worksource-activity-city",
+        contact.get("worksource_activity_city"),
+    )
+    set_text(
+        page,
+        writer,
+        fields,
+        px + "worksource-activity-state",
+        contact.get("worksource_activity_state"),
+    )
+
+    # Other activity (if provided)
+    set_text(
+        page,
+        writer,
+        fields,
+        px + "other-activity-kind",
+        contact.get("other_activity_kind"),
+    )
+    set_text(
+        page,
+        writer,
+        fields,
+        px + "other-activity-documentation",
+        contact.get("other_activity_documentation"),
+    )
+
+    # Generic "activity" (if you store a simple description)
+    set_text(page, writer, fields, px + "activity", contact.get("activity"))
 
 
-def _set_checkbox(page, writer, field_name, on: bool):
-    """Set a checkbox field value in the PDF form.
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Fill WA ESD PDF (simplified field names)."
+    )
+    parser.add_argument(
+        "pdf_in", help="Renamed/cleaned WA ESD PDF (with simplified field names)"
+    )
+    parser.add_argument("yaml_in", help="Weekly YAML data file")
+    parser.add_argument("pdf_out", help="Output filled PDF")
+    args = parser.parse_args()
 
-    Args:
-        page: The PDF page object.
-        writer: The PDF writer object.
-        field_name (str): Name of the checkbox field.
-        on (bool): Whether to check (True) or uncheck (False) the box.
-    """
-    if field_name:
-        writer.update_page_form_field_values(page, {field_name: "Yes" if on else "Off"})
+    # Load data
+    with open(args.yaml_in, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
 
-
-def fill(pdf_in: str, yaml_in: str, pdf_out: str, map_in: str):
-    """Fill a PDF form using data from a YAML file and field mappings.
-
-    Args:
-        pdf_in (str): Path to the blank PDF form.
-        yaml_in (str): Path to the YAML data file.
-        pdf_out (str): Path to output the filled PDF.
-        map_in (str): Path to the YAML mapping file.
-    """
-    aliases, checkboxes = load_mapping(map_in)
-    with open(yaml_in, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    contacts = data.get("contacts", [])
+    contacts: List[Dict[str, Any]] = data.get("contacts", [])
     if len(contacts) < 3:
-        raise SystemExit("Need at least 3 contacts/activities for the week.")
+        print(
+            "Warning: fewer than 3 contacts in data; the form expects at least 3.",
+            file=sys.stderr,
+        )
 
-    reader = PdfReader(pdf_in)
+    # Read + prepare PDF
+    reader = PdfReader(args.pdf_in)
     writer = PdfWriter()
-    writer.clone_document_from_reader(reader)
-    _set_need_appearances(writer)
+    clone_form(reader, writer)
+    set_need_appearances(writer)
 
     fields = reader.get_fields() or {}
-    page = writer.pages[0]
+    page = first_page(writer)
 
-    # header
-    _set_text(page, writer, fields, aliases, "week_ending", data.get("week_ending"))
-    _set_text(page, writer, fields, aliases, "name", data.get("name"))
-    _set_text(page, writer, fields, aliases, "id_or_ssn", data.get("id_or_ssn"))
+    # Header
+    set_text(page, writer, fields, "name", data.get("name"))
+    set_text(page, writer, fields, "ssn", data.get("ssn"))
+    set_text(
+        page,
+        writer,
+        fields,
+        "week-ending",
+        data.get("week_ending") or data.get("week-ending"),
+    )
 
-    # contacts 1..3
+    # Contacts 1..3 (fill only if present)
     for idx in (1, 2, 3):
-        c = contacts[idx - 1]
-        p = f"c{idx}"
+        c = contacts[idx - 1] if len(contacts) >= idx else {}
+        fill_contact_block(idx, c, page, writer, fields)
 
-        _set_text(page, writer, fields, aliases, f"{p}.date", c.get("date"))
-        _set_text(
-            page,
-            writer,
-            fields,
-            aliases,
-            f"{p}.job_title_or_ref",
-            c.get("job_title_or_ref"),
-        )
-        _set_text(page, writer, fields, aliases, f"{p}.employer", c.get("employer"))
-        _set_text(page, writer, fields, aliases, f"{p}.address", c.get("address"))
-        _set_text(page, writer, fields, aliases, f"{p}.city", c.get("city"))
-        _set_text(page, writer, fields, aliases, f"{p}.state", c.get("state"))
-        _set_text(
-            page,
-            writer,
-            fields,
-            aliases,
-            f"{p}.website_or_email",
-            c.get("website_or_email"),
-        )
-        _set_text(page, writer, fields, aliases, f"{p}.phone", c.get("phone"))
-        _set_text(
-            page, writer, fields, aliases, f"{p}.what_activity", c.get("what_activity")
-        )
-        _set_text(
-            page, writer, fields, aliases, f"{p}.documentation", c.get("documentation")
-        )
-        _set_text(
-            page, writer, fields, aliases, f"{p}.office_name", c.get("office_name")
-        )
-
-        # kind
-        kind = (c.get("kind") or "").strip().lower()
-        if f"{p}.kind" in checkboxes:
-            for label, field in checkboxes[f"{p}.kind"].items():
-                _set_checkbox(page, writer, field, label.lower() in kind)
-
-        # method
-        method = (c.get("contact_method") or "").strip().lower()
-        if f"{p}.method" in checkboxes:
-            for label, field in checkboxes[f"{p}.method"].items():
-                _set_checkbox(page, writer, field, label.lower() in method)
-
-        # type
-        ctype = (c.get("contact_type") or "").strip().lower()
-        if f"{p}.type" in checkboxes:
-            for label, field in checkboxes[f"{p}.type"].items():
-                _set_checkbox(page, writer, field, label.lower() in ctype)
-
-    with open(pdf_out, "wb") as f:
-        writer.write(f)
+    # Save
+    with open(args.pdf_out, "wb") as out_f:
+        writer.write(out_f)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fill a weekly job-search log PDF")
-    parser.add_argument("pdf_in", help="Blank PDF file")
-    parser.add_argument("yaml_in", help="Weekly YAML data file")
-    parser.add_argument("pdf_out", help="Output filled PDF")
-    parser.add_argument(
-        "--map", required=True, help="YAML mapping file with aliases + checkboxes"
-    )
-
-    args = parser.parse_args()
-    fill(args.pdf_in, args.yaml_in, args.pdf_out, args.map)
+    try:
+        main()
+    except PdfReadError as e:
+        print(f"PDF read error: {e}", file=sys.stderr)
+        sys.exit(2)
