@@ -1,5 +1,6 @@
+---
 name: "Farooq Mahmud"
-ssn: "555-55-1234"
+ssn: "XXX-XX-XXXX"
 week_ending: "09/27/2025"
 
 contacts:
@@ -24,7 +25,7 @@ contacts:
     state: "WA"
     website_or_email: "https://www.cascadedata.io"
     phone: "(206) 555-9876"
-    contact_method: [ "Online" ]
+    contact_method: ["Online"]
     contact_type: "application/resume"
 
   - date: "09/24/2025"
@@ -36,5 +37,5 @@ contacts:
     state: "WA"
     website_or_email: "https://www.nwcloudworks.com"
     phone: "(425) 555-4433"
-    contact_method: [ "Online" ]
+    contact_method: ["Online"]
     contact_type: "application/resume"

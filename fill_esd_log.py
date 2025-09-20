@@ -12,8 +12,22 @@ from __future__ import annotations
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, BooleanObject, DictionaryObject
-import argparse, yaml, sys
+import argparse, yaml, sys, os
 from typing import Any, Dict, List
+
+VERBOSE: bool = False
+
+
+def _is_truthy_env(value: str | None) -> bool:
+    if value is None:
+        return False
+    v = value.strip().lower()
+    return v not in ("", "0", "false", "no", "off")
+
+
+def _debug(msg: str) -> None:
+    if VERBOSE:
+        print(f"DEBUG: {msg}", file=sys.stderr)
 
 
 def clone_form(reader: PdfReader, writer: PdfWriter) -> None:
@@ -26,7 +40,7 @@ def clone_form(reader: PdfReader, writer: PdfWriter) -> None:
     """
     try:
         writer.clone_document_from_reader(reader)  # pypdf >= 4.0
-    except Exception:
+    except (AttributeError, NotImplementedError, TypeError):
         writer.append_pages_from_reader(reader)
         acro = reader.trailer["/Root"].get("/AcroForm")
         if acro is not None:
@@ -60,11 +74,16 @@ def set_text(
     - field_name: Name of the text field to update.
     - value: Value to write; converted to string, None becomes an empty string.
     """
-    if not field_name or field_name not in fields:
+    if not field_name:
         return
-    writer.update_page_form_field_values(
-        page, {field_name: "" if value is None else str(value)}
-    )
+    if field_name not in fields:
+        _debug(f"Requested text field absent: '{field_name}'")
+        return
+
+    for p in writer.pages:
+        writer.update_page_form_field_values(
+            p, {field_name: "" if value is None else str(value)}
+        )
 
 
 def _collect_on_states(obj) -> List[str]:
@@ -128,15 +147,19 @@ def set_checkbox(
     - field_name: Name of the checkbox field to update.
     - on: True to check, False to uncheck.
     """
-    if not field_name or field_name not in fields:
+    if not field_name:
+        return
+    if field_name not in fields:
+        _debug(f"Requested checkbox field absent: '{field_name}'")
         return
     on_value = detect_on_state(fields, field_name)
-    writer.update_page_form_field_values(
-        page, {field_name: (f"/{on_value}" if on else "/Off")}
-    )
+    target = NameObject(f"/{on_value}") if on else NameObject("/Off")
+
+    for p in writer.pages:
+        writer.update_page_form_field_values(p, {field_name: target})
 
 
-def _radio_on_values(fields: dict, group_name: str) -> list[str]:
+def _radio_on_values(fields: dict[str, Any], group_name: str) -> list[str]:
     """Enumerate valid appearance states for the radio button group.
 
     Returns:
@@ -172,7 +195,11 @@ def _radio_on_values(fields: dict, group_name: str) -> list[str]:
 
 
 def set_radio_group(
-    page, writer: PdfWriter, fields: dict, group_name: str, desired: str | None
+    page,
+    writer: PdfWriter,
+    fields: dict[str, Any],
+    group_name: str,
+    desired: str | None,
 ) -> None:
     """Set a radio button group to a desired option if possible.
 
@@ -183,7 +210,10 @@ def set_radio_group(
 
     Parameters mirror those of set_checkbox for page, writer, and fields.
     """
-    if not desired or group_name not in fields:
+    if not desired:
+        return
+    if group_name not in fields:
+        _debug(f"Requested radio group absent: '{group_name}'")
         return
     opts = _radio_on_values(fields, group_name)
     dl = desired.strip().lower()
@@ -268,13 +298,8 @@ def fill_contact_block(
     methods = [method_raw] if isinstance(method_raw, str) else (method_raw or [])
     for label, suffix in CONTACT_METHOD_FIELDS:
         field_name = f"{px}{suffix}"
-        set_checkbox(
-            page,
-            writer,
-            fields,
-            field_name,
-            any(label.lower() in (m or "").lower() for m in methods),
-        )
+        on = any(label.lower() == (m or "").strip().lower() for m in methods)
+        set_checkbox(page, writer, fields, field_name, on)
 
     # Activity radio group
     activity = (contact.get("activity_choice") or "").strip().lower()
@@ -376,7 +401,17 @@ def main() -> None:
     parser.add_argument("pdf_in", help="Renamed/cleaned WA ESD PDF")
     parser.add_argument("yaml_in", help="Weekly YAML data file")
     parser.add_argument("pdf_out", help="Output filled PDF")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable debug warnings for missing PDF fields",
+    )
     args = parser.parse_args()
+
+    # Enable verbose via flag or ESD_VERBOSE env var
+    global VERBOSE
+    VERBOSE = bool(args.verbose or _is_truthy_env(os.getenv("ESD_VERBOSE")))
 
     with open(args.yaml_in, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
