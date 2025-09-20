@@ -220,16 +220,21 @@ def set_radio_group(
     # exact match
     for o in opts:
         if o.lower() == dl:
-            writer.update_page_form_field_values(page, {group_name: f"/{o}"})
+            for p in writer.pages:
+                writer.update_page_form_field_values(
+                    p, {group_name: NameObject(f"/{o}")}
+                )
             return
     # contains match
     for o in opts:
         if dl in o.lower():
-            writer.update_page_form_field_values(page, {group_name: f"/{o}"})
+            for p in writer.pages:
+                writer.update_page_form_field_values(p, {group_name: f"/{o}"})
             return
     # fallback
     if opts:
-        writer.update_page_form_field_values(page, {group_name: f"/{opts[0]}"})
+        for p in writer.pages:
+            writer.update_page_form_field_values(p, {group_name: f"/{opts[0]}"})
 
 
 def first_page(writer: PdfWriter):
