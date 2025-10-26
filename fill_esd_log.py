@@ -462,6 +462,12 @@ def main() -> None:
 
         contact_info = contact_info_service.get_contact_info(c["business_name"])
 
+        c["address"] = contact_info["address"]
+        c["city"] = contact_info["city"]
+        c["state"] = contact_info["state"]
+        c["website_or_email"] = contact_info["website_or_email"]
+        c["phone"] = contact_info["phone"]
+
         fill_contact_block(idx, c, page, writer, fields)
 
     with open(args.pdf_out, "wb") as out_f:

@@ -1,26 +1,26 @@
 ---
 name: "Farooq Mahmud"
 ssn: "XXX-XX-XXXX"
-week_ending: "09/27/2025"
+week_ending: "10/25/2025"
 
 contacts:
-  - date: "09/22/2025"
+  - date: "10/21/2025"
     activity_choice: "employer contact"
-    job_title: "Senior .NET Engineer"
+    business_name: "Perfect Serve"
+    job_title: "Senior. Software Engineer"
+    contact_method: ["Online"]
+    contact_type: "application/resume"
+
+  - date: "10/21/2025"
+    activity_choice: "employer contact"
     business_name: "HopSkip"
+    job_title: "Lead Dotnet Developer"
     contact_method: ["Online"]
     contact_type: "application/resume"
 
-  - date: "09/23/2025"
+  - date: "10/21/2025"
     activity_choice: "employer contact"
-    job_title: ".NET Engineer"
-    business_name: "PerfectServe"
-    contact_method: ["Online"]
-    contact_type: "application/resume"
-
-  - date: "09/24/2025"
-    activity_choice: "employer contact"
-    job_title: "Principal Engineer"
-    business_name: "Deloitte"
+    business_name: "Carnival Cruise Lines"
+    job_title: "Lead Dotnet Developer"
     contact_method: ["Online"]
     contact_type: "application/resume"

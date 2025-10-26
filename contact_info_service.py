@@ -1,3 +1,6 @@
+import json
+
+
 class ContactInfoService:
     __CONTACT_INFO_FORMAT = {
         "format": {
@@ -13,7 +16,11 @@ class ContactInfoService:
                         "type": "string",
                         "description": "Contact's website or email",
                     },
-                    "phone": {"type": "string", "description": "Contact's phone"},
+                    "phone": {
+                        "type": "string",
+                        "description": "Contact's phone",
+                        "pattern": "^\\(\\d{3}\\) \\d{3}-\\d{4}$",
+                    },
                     "source_urls": {
                         "type": "array",
                         "description": "List of URLs associated with the contact's source",
@@ -97,4 +104,6 @@ class ContactInfoService:
             metadata={"purpose": "esd_business_name_lookup"},
         )
 
-        return response.output_text
+        data = json.loads(response.output_text)
+
+        return data
