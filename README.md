@@ -1,12 +1,13 @@
 # PDF Form Filler
 
-PDF Form Filler is a command-line tool for automatically filling out weekly job-search log PDF forms using structured YAML data. It is designed to help users quickly generate completed forms for submission, and to make onboarding and contribution easy for developers.
+PDF Form Filler is a command-line tool for automatically filling out weekly job-search log PDF forms using structured YAML data. It leverages AI to look up and fill company contact information based on business names, making it easy to generate completed forms for submission. Designed for quick setup and use by developers.
 
 ## Features
 
 - Fill out job-search log PDFs using YAML data
-- Supports field aliases and checkbox mapping for flexible PDF templates
+- AI-powered lookup of company contact information (address, city, state, website/email, phone) using OpenAI
 - Simple command-line interface
+- Utility script to extract field names from PDFs
 - Easily extensible and customizable
 
 ## Getting Started
@@ -15,6 +16,7 @@ PDF Form Filler is a command-line tool for automatically filling out weekly job-
 
 - Python 3.12 or later
 - [pip](https://pip.pypa.io/en/stable/)
+- OpenAI API key (set via .env file as `OPENAI_API_KEY`)
 
 ### Installation
 
@@ -36,56 +38,73 @@ PDF Form Filler is a command-line tool for automatically filling out weekly job-
    ```
 
 3. Install dependencies:
+
    ```sh
    pip install -r requirements.txt
+   ```
+
+4. Set up OpenAI API key: Create a `.env` file in the project root with your OpenAI API key:
+
+   ```sh
+   OPENAI_API_KEY=your_openai_api_key_here
    ```
 
 ## Usage
 
 ### Prepare Your Files
 
-- **Blank PDF**: The original, unfilled job-search log PDF form.
+- **Blank PDF**: A blank job-search log PDF form is included in the repository as `ESD-job-search-log-blank.pdf`. This PDF has been prepared with appropriately named fields (e.g., "name", "ssn", "week-ending", "c1-contact-date", etc.). Use `get_fields.py` to inspect and verify field names in any other PDF you use.
 - **YAML Data File**: Contains the weekly job-search data (see `week.yaml` for an example).
-- **Mapping File**: YAML file mapping logical field names to PDF field names and checkboxes (see `esd_log_mapping.yaml`).
 
-### Example Command
+### Filler Script
 
-```sh
-python fill_esd_log.py <blank.pdf> <week.yaml> <output.pdf> --map esd_log_mapping.yaml
-```
-
-#### Example:
+Fill the PDF form using the following command:
 
 ```sh
-python fill_esd_log.py blank_log.pdf week.yaml filled_log.pdf --map esd_log_mapping.yaml
+python fill_esd_log.py <blank.pdf> <week.yaml> <output.pdf>
 ```
+
+#### Example
+
+```sh
+python fill_esd_log.py ESD-job-search-log-blank.pdf week.yaml filled_log.pdf
+```
+
+This will read the YAML data, use AI to look up missing contact information for each business_name, and fill the PDF accordingly.
+
+### Utility Script: Extract PDF Fields
+
+To list all field names in a PDF form, use the utility script:
+
+```sh
+python get_fields.py <blank.pdf>
+```
+
+#### Example
+
+```sh
+python get_fields.py ESD-job-search-log-blank.pdf
+```
+
+This is useful for preparing or verifying the PDF has the correct field names.
 
 ### YAML Data Example
 
-See `week.yaml` for a sample structure:
+See `week.yaml` for a sample structure. Provide at least 3 contacts. The tool will automatically look up company contact information based on `business_name` using OpenAI.
 
 ```yaml
-week_ending: "09/13/2025"
 name: "John Doe"
-id_or_ssn: "999-99-9999"
+ssn: "XXX-XX-XXXX"
+week_ending: "10/25/2025"
 contacts:
   - date: "09/08/2025"
-	 kind: "Employer contact"
-	 contact_method: "Online"
-	 contact_type: "Application/resume"
-	 job_title_or_ref: "Senior Software Engineer"
-	 employer: "Evergreen Tech Solutions"
-	 address: "4250 Innovation Way"
-	 city: "Bellevue"
-	 state: "WA"
-	 website_or_email: "https://www.evergreentechsolutions.com"
-	 phone: "(425) 555-1212"
+    activity_choice: "employer contact"
+    business_name: "Evergreen Tech Solutions"
+    job_title: "Senior Software Engineer"
+    contact_method: ["Online"]
+    contact_type: "application/resume"
   # ... add at least 3 contacts
 ```
-
-### Mapping File Example
-
-See `esd_log_mapping.yaml` for a sample structure. This file maps logical field names to the actual PDF field names and checkboxes.
 
 ## Development & Contribution
 

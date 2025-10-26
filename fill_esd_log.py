@@ -14,8 +14,24 @@ from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, BooleanObject, DictionaryObject
 import argparse, yaml, sys, os
 from typing import Any, Dict, List
+from dotenv import load_dotenv
+from contact_info_service import ContactInfoService
+from openai import OpenAI
+
+load_dotenv()
 
 VERBOSE: bool = False
+
+try:
+    open_api_client = OpenAI()
+    contact_info_service = ContactInfoService(open_api_client)
+except Exception as e:
+    print(
+        f"Error: Failed to initialize OpenAI client. Ensure OPENAI_API_KEY is set in .env file.",
+        file=sys.stderr,
+    )
+
+    sys.exit(1)
 
 
 def _is_truthy_env(value: str | None) -> bool:
@@ -422,6 +438,7 @@ def main() -> None:
         data = yaml.safe_load(f) or {}
 
     contacts: List[Dict[str, Any]] = data.get("contacts", [])
+
     if len(contacts) < 3:
         print(
             "Warning: fewer than 3 contacts in data; the form expects at least 3.",
@@ -450,6 +467,32 @@ def main() -> None:
     # Contacts
     for idx in (1, 2, 3):
         c = contacts[idx - 1] if len(contacts) >= idx else {}
+
+        business_name = c.get("business_name")
+
+        if not business_name:
+            _debug(f"Contact {idx} missing business_name, skipping enrichment")
+
+        try:
+            contact_info = contact_info_service.get_contact_info(c["business_name"])
+
+            if "error" in contact_info:
+                print(
+                    f"Warning: Could not enrich contact {idx}: {contact_info['error']}",
+                    file=sys.stderr,
+                )
+            else:
+                c["address"] = contact_info["address"]
+                c["city"] = contact_info["city"]
+                c["state"] = contact_info["state"]
+                c["website_or_email"] = contact_info["website_or_email"]
+                c["phone"] = contact_info["phone"]
+        except Exception as e:
+            print(
+                f"Warning: Failed to enrich contact {idx} ({business_name}): {e}",
+                file=sys.stderr,
+            )
+
         fill_contact_block(idx, c, page, writer, fields)
 
     with open(args.pdf_out, "wb") as out_f:
