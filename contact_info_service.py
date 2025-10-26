@@ -2,6 +2,12 @@ import json
 
 
 class ContactInfoService:
+    """Service for retrieving and enriching company contact information using OpenAI.
+
+    This class provides functionality to look up official contact details
+    for companies (address, city, state, website/email, phone) using OpenAI's
+    search capabilities and JSON schema validation.
+    """
     __CONTACT_INFO_FORMAT = {
         "format": {
             "type": "json_schema",
@@ -42,6 +48,14 @@ class ContactInfoService:
     }
 
     def __init__(self, openai_client):
+        """Initialize the ContactInfoService with an OpenAI client.
+
+        Args:
+            openai_client: An instance of the OpenAI client used for API calls.
+
+        Raises:
+            Exception: If openai_client is None.
+        """
         if openai_client is None:
             raise Exception("openai_client must be provided")
 
@@ -88,6 +102,24 @@ class ContactInfoService:
         """
 
     def get_contact_info(self, business_name: str):
+        """Retrieve contact information for a company using OpenAI.
+
+        Uses OpenAI's search capabilities to find official contact details
+        including address, city, state, website/email, phone, and source URLs.
+
+        Args:
+            business_name (str): The name of the business to look up.
+
+        Returns:
+            dict: A dictionary containing the contact information with keys:
+                - address (str): Street address
+                - city (str): City
+                - state (str): State
+                - website_or_email (str): Official website or email
+                - phone (str): Phone number in format "(XXX) XXX-XXXX"
+                - source_urls (list[str]): List of source URLs used
+                - error (str): Error message if lookup fails (optional)
+        """
         response = self.open_ai_client.responses.create(
             model="gpt-4o-mini",
             tools=[{"type": "web_search"}],
