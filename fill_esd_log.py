@@ -14,6 +14,10 @@ from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, BooleanObject, DictionaryObject
 import argparse, yaml, sys, os
 from typing import Any, Dict, List
+from dotenv import load_dotenv
+from contact_info_service import get_contact_info
+
+load_dotenv()
 
 VERBOSE: bool = False
 
@@ -421,7 +425,8 @@ def main() -> None:
     with open(args.yaml_in, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
 
-    contacts: List[Dict[str, Any]] = data.get("contacts", [])
+    contacts = get_contacts(data)
+
     if len(contacts) < 3:
         print(
             "Warning: fewer than 3 contacts in data; the form expects at least 3.",
@@ -450,10 +455,18 @@ def main() -> None:
     # Contacts
     for idx in (1, 2, 3):
         c = contacts[idx - 1] if len(contacts) >= idx else {}
+
+        contact_info = get_contact_info(c["business_name"])
+
         fill_contact_block(idx, c, page, writer, fields)
 
     with open(args.pdf_out, "wb") as out_f:
         writer.write(out_f)
+
+
+def get_contacts(data):
+    contacts: List[Dict[str, Any]] = data.get("contacts", [])
+    return contacts
 
 
 if __name__ == "__main__":
