@@ -15,11 +15,15 @@ from pypdf.generic import NameObject, BooleanObject, DictionaryObject
 import argparse, yaml, sys, os
 from typing import Any, Dict, List
 from dotenv import load_dotenv
-from contact_info_service import get_contact_info
+from contact_info_service import ContactInfoService
+from openai import OpenAI
 
 load_dotenv()
 
 VERBOSE: bool = False
+
+open_api_client = OpenAI()
+contact_info_service = ContactInfoService(open_api_client)
 
 
 def _is_truthy_env(value: str | None) -> bool:
@@ -456,7 +460,7 @@ def main() -> None:
     for idx in (1, 2, 3):
         c = contacts[idx - 1] if len(contacts) >= idx else {}
 
-        contact_info = get_contact_info(c["business_name"])
+        contact_info = contact_info_service.get_contact_info(c["business_name"])
 
         fill_contact_block(idx, c, page, writer, fields)
 
