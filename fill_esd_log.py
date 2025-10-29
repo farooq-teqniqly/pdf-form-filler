@@ -482,6 +482,111 @@ def fill_contact_block(
     set_text(page, writer, fields, px + "activity", contact.get("activity"))
 
 
+def _enrich_single_contact(contact: Dict[str, Any], idx: int) -> None:
+    """Enrich a single contact with additional information from the contact
+    service.
+
+    Parameters:
+    - contact: Contact dictionary to enrich (modified in-place).
+    - idx: Contact index (1-3) for logging purposes.
+    """
+    business_name = contact.get("business_name")
+
+    with tracer.start_as_current_span(f"enrich_contact_{idx}") as contact_span:
+        enrichment_start = time.time()
+        contact_span.set_attribute("contact.index", idx)
+        contact_span.set_attribute("contact.business_name", business_name)
+
+        try:
+            contact_info = contact_info_service.get_contact_info(business_name)
+
+            if "error" in contact_info:
+                contact_span.set_attribute(
+                    telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS, False
+                )
+                contact_span.set_attribute("enrichment.error", contact_info["error"])
+
+                contact_enrichment_failed_counter.add(
+                    1,
+                    {
+                        "error_type": "business_not_found",
+                        "business_name": business_name,
+                    },
+                )
+
+                print(
+                    f"Warning: Could not enrich contact {idx}: {contact_info['error']}",
+                    file=sys.stderr,
+                )
+            else:
+                contact_span.set_attribute(
+                    telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS, True
+                )
+                contact["address"] = contact_info["address"]
+                contact["city"] = contact_info["city"]
+                contact["state"] = contact_info["state"]
+                contact["website_or_email"] = contact_info["website_or_email"]
+                contact["phone"] = contact_info["phone"]
+
+                contact_enriched_counter.add(1, {"business_name": business_name})
+        except Exception as e:
+            contact_span.set_attribute(
+                telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS, False
+            )
+            contact_span.set_status(Status(StatusCode.ERROR))
+            contact_span.record_exception(e)
+
+            contact_enrichment_failed_counter.add(
+                1,
+                {
+                    "error_type": "exception",
+                    "business_name": business_name,
+                },
+            )
+
+            print(
+                f"Warning: Failed to enrich contact {idx} ({business_name}): {e}",
+                file=sys.stderr,
+            )
+        finally:
+            enrichment_duration_ms = (time.time() - enrichment_start) * 1000
+            contact_enrichment_duration.record(
+                enrichment_duration_ms,
+                {
+                    "contact_index": str(idx),
+                    "business_name": business_name,
+                },
+            )
+
+
+def _process_contacts(
+    contacts: List[Dict[str, Any]], page, writer: PdfWriter, fields: Dict[str, Any]
+) -> None:
+    """Process and enrich all contacts, then fill their form blocks.
+
+    Parameters:
+    - contacts: List of contact dictionaries.
+    - page: Target page object.
+    - writer: PdfWriter receiving updates.
+    - fields: Mapping of field names to field objects from the source PDF.
+    """
+    with tracer.start_as_current_span("enrich_contacts") as enrich_span:
+        enrich_span.set_attribute("contacts.total", 3)
+        enrich_span.set_attribute("contacts.provided", len(contacts))
+
+        for idx in (1, 2, 3):
+            c = contacts[idx - 1] if len(contacts) >= idx else {}
+            business_name = c.get("business_name")
+
+            if not business_name:
+                _debug(f"Contact {idx} missing business_name, skipping enrichment")
+                fill_contact_block(idx, c, page, writer, fields)
+                continue
+
+            _enrich_single_contact(c, idx)
+            fill_contact_block(idx, c, page, writer, fields)
+
+
 def main() -> None:
     """Command-line entry point.
 
@@ -556,7 +661,6 @@ def main() -> None:
             # Fill header
             set_text(page, writer, fields, "name", data.get("name"))
             set_text(page, writer, fields, "ssn", data.get("ssn"))
-
             set_text(
                 page,
                 writer,
@@ -565,112 +669,8 @@ def main() -> None:
                 data.get("week_ending") or data.get("week-ending"),
             )
 
-            # Enrich and fill contacts
-            with tracer.start_as_current_span("enrich_contacts") as enrich_span:
-                enrich_span.set_attribute("contacts.total", 3)
-                enrich_span.set_attribute("contacts.provided", len(contacts))
-
-                for idx in (1, 2, 3):
-                    c = contacts[idx - 1] if len(contacts) >= idx else {}
-
-                    business_name = c.get("business_name")
-
-                    if not business_name:
-                        _debug(
-                            f"Contact {idx} missing business_name, skipping enrichment"
-                        )
-
-                        fill_contact_block(idx, c, page, writer, fields)
-                        continue
-
-                    with tracer.start_as_current_span(
-                        f"enrich_contact_{idx}"
-                    ) as contact_span:
-                        enrichment_start = time.time()
-                        contact_span.set_attribute("contact.index", idx)
-
-                        contact_span.set_attribute(
-                            "contact.business_name", business_name
-                        )
-
-                        try:
-                            contact_info = contact_info_service.get_contact_info(
-                                c["business_name"]
-                            )
-
-                            if "error" in contact_info:
-                                contact_span.set_attribute(
-                                    telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS,
-                                    False,
-                                )
-
-                                contact_span.set_attribute(
-                                    "enrichment.error", contact_info["error"]
-                                )
-
-                                # Record failure metric
-                                contact_enrichment_failed_counter.add(
-                                    1,
-                                    {
-                                        "error_type": "business_not_found",
-                                        "business_name": business_name,
-                                    },
-                                )
-
-                                print(
-                                    f"Warning: Could not enrich contact {idx}: {contact_info['error']}",
-                                    file=sys.stderr,
-                                )
-                            else:
-                                contact_span.set_attribute(
-                                    telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS,
-                                    True,
-                                )
-                                c["address"] = contact_info["address"]
-                                c["city"] = contact_info["city"]
-                                c["state"] = contact_info["state"]
-                                c["website_or_email"] = contact_info["website_or_email"]
-                                c["phone"] = contact_info["phone"]
-
-                                # Record success metric
-                                contact_enriched_counter.add(
-                                    1, {"business_name": business_name}
-                                )
-                        except Exception as e:
-                            contact_span.set_attribute(
-                                telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS, False
-                            )
-                            contact_span.set_status(Status(StatusCode.ERROR))
-                            contact_span.record_exception(e)
-
-                            # Record failure metric
-                            contact_enrichment_failed_counter.add(
-                                1,
-                                {
-                                    "error_type": "exception",
-                                    "business_name": business_name,
-                                },
-                            )
-
-                            print(
-                                f"Warning: Failed to enrich contact {idx} ({business_name}): {e}",
-                                file=sys.stderr,
-                            )
-                        finally:
-                            # Record enrichment duration
-                            enrichment_duration_ms = (
-                                time.time() - enrichment_start
-                            ) * 1000
-
-                            contact_enrichment_duration.record(
-                                enrichment_duration_ms,
-                                {
-                                    "contact_index": str(idx),
-                                    "business_name": business_name,
-                                },
-                            )
-
-                    fill_contact_block(idx, c, page, writer, fields)
+            # Process contacts
+            _process_contacts(contacts, page, writer, fields)
 
             # Write PDF
             with tracer.start_as_current_span("write_pdf") as write_span:
@@ -685,11 +685,9 @@ def main() -> None:
 
             # Record PDF processing metrics
             processing_duration_ms = (time.time() - start_time) * 1000
-
             pdf_processing_duration.record(
                 processing_duration_ms, {"status": "success"}
             )
-
             pdf_processed_counter.add(1, {"status": "success"})
 
         except Exception as e:
@@ -698,11 +696,9 @@ def main() -> None:
 
             # Record failure metrics
             processing_duration_ms = (time.time() - start_time) * 1000
-
             pdf_processing_duration.record(
                 processing_duration_ms, {"status": "failure"}
             )
-
             pdf_processed_counter.add(1, {"status": "failure"})
 
             raise
