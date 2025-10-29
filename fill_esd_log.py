@@ -32,13 +32,15 @@ import time
 load_dotenv()
 
 VERBOSE: bool = False
+ACRO_FORM: str = "/AcroForm"
+KIDS: str = "/Kids"
 
 try:
     open_api_client = OpenAI()
     contact_info_service = ContactInfoService(open_api_client)
 except Exception as e:
     print(
-        f"Error: Failed to initialize OpenAI client. Ensure OPENAI_API_KEY is set in .env file.",
+        "Error: Failed to initialize OpenAI client. Ensure OPENAI_API_KEY is set in .env file.",
         file=sys.stderr,
     )
 
@@ -69,9 +71,9 @@ def clone_form(reader: PdfReader, writer: PdfWriter) -> None:
         writer.clone_document_from_reader(reader)  # pypdf >= 4.0
     except (AttributeError, NotImplementedError, TypeError):
         writer.append_pages_from_reader(reader)
-        acro = reader.trailer["/Root"].get("/AcroForm")
+        acro = reader.trailer["/Root"].get(ACRO_FORM)
         if acro is not None:
-            writer._root_object[NameObject("/AcroForm")] = writer._add_object(acro)
+            writer._root_object[NameObject(ACRO_FORM)] = writer._add_object(acro)
 
 
 def set_need_appearances(writer: PdfWriter) -> None:
@@ -80,11 +82,11 @@ def set_need_appearances(writer: PdfWriter) -> None:
     Many viewers rely on this flag to render updated field values
     without regenerating field appearances manually.
     """
-    if "/AcroForm" not in writer._root_object:
+    if ACRO_FORM not in writer._root_object:
         writer._root_object.update(
-            {NameObject("/AcroForm"): writer._add_object(DictionaryObject())}
+            {NameObject(ACRO_FORM): writer._add_object(DictionaryObject())}
         )
-    writer._root_object["/AcroForm"].update(
+    writer._root_object[ACRO_FORM].update(
         {NameObject("/NeedAppearances"): BooleanObject(True)}
     )
 
@@ -149,8 +151,8 @@ def detect_on_state(fields: Dict[str, Any], field_name: str) -> str:
         except Exception:
             pass
         on_states.extend(_collect_on_states(fobj))
-        if "/Kids" in fobj:
-            for kid in fobj["/Kids"]:
+        if KIDS in fobj:
+            for kid in fobj[KIDS]:
                 try:
                     on_states.extend(_collect_on_states(kid.get_object()))
                 except Exception:
@@ -199,8 +201,8 @@ def _radio_on_values(fields: dict[str, Any], group_name: str) -> list[str]:
             fobj = fobj.get_object()
         except Exception:
             pass
-        if "/Kids" in fobj:
-            for kid in fobj["/Kids"]:
+        if KIDS in fobj:
+            for kid in fobj[KIDS]:
                 try:
                     ko = kid.get_object()
                     n = ko.get("/AP", {}).get("/N")

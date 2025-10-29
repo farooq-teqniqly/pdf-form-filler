@@ -1,6 +1,6 @@
 import json
 from typing import ClassVar
-from telemetry import tracer
+from telemetry import tracer, SpanAttributes
 from opentelemetry.trace import Status, StatusCode
 from jsonschema import validate, ValidationError
 
@@ -154,8 +154,8 @@ class ContactInfoService:
                     metadata={"purpose": "esd_business_name_lookup"},
                 )
             except Exception as e:
-                span.set_attribute("lookup.success", False)
-                span.set_attribute("error.type", "api_error")
+                span.set_attribute(SpanAttributes.LOOKUP_SUCCESS, False)
+                span.set_attribute(SpanAttributes.ERROR_TYPE, "api_error")
                 span.set_status(Status(StatusCode.ERROR))
                 span.record_exception(e)
 
@@ -166,8 +166,8 @@ class ContactInfoService:
             try:
                 data = json.loads(response.output_text)
             except json.decoder.JSONDecodeError as e:
-                span.set_attribute("lookup.success", False)
-                span.set_attribute("error.type", "json_decode_error")
+                span.set_attribute(SpanAttributes.LOOKUP_SUCCESS, False)
+                span.set_attribute(SpanAttributes.ERROR_TYPE, "json_decode_error")
                 span.set_status(Status(StatusCode.ERROR))
                 span.record_exception(e)
 
@@ -176,8 +176,8 @@ class ContactInfoService:
                 ) from e
 
             if "error" in data:
-                span.set_attribute("lookup.success", False)
-                span.set_attribute("error.type", "business_not_found")
+                span.set_attribute(SpanAttributes.LOOKUP_SUCCESS, False)
+                span.set_attribute(SpanAttributes.ERROR_TYPE, "business_not_found")
                 span.set_attribute("error.message", data["error"])
                 return data
 
@@ -190,8 +190,8 @@ class ContactInfoService:
             missing_fields = [field for field in required_fields if field not in data]
 
             if missing_fields:
-                span.set_attribute("lookup.success", False)
-                span.set_attribute("error.type", "missing_fields")
+                span.set_attribute(SpanAttributes.LOOKUP_SUCCESS, False)
+                span.set_attribute(SpanAttributes.ERROR_TYPE, "missing_fields")
                 span.set_attribute("error.missing_fields", ", ".join(missing_fields))
                 span.set_status(Status(StatusCode.ERROR))
                 span.record_exception(e)
@@ -203,12 +203,12 @@ class ContactInfoService:
             try:
                 validate(data, schema)
             except ValidationError as e:
-                span.set_attribute("lookup.success", False)
-                span.set_attribute("error.type", "schema_validation_error")
+                span.set_attribute(SpanAttributes.LOOKUP_SUCCESS, False)
+                span.set_attribute(SpanAttributes.ERROR_TYPE, "schema_validation_error")
                 span.set_status(Status(StatusCode.ERROR))
                 span.record_exception(e)
 
-            span.set_attribute("lookup.success", True)
+            span.set_attribute(SpanAttributes.LOOKUP_SUCCESS, True)
             span.set_attribute("result.city", data.get("city", ""))
             span.set_attribute("result.state", data.get("state", ""))
 
