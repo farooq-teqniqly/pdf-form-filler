@@ -43,10 +43,16 @@ PDF Form Filler is a command-line tool for automatically filling out weekly job-
    pip install -r requirements.txt
    ```
 
-4. Set up OpenAI API key: Create a `.env` file in the project root with your OpenAI API key:
+4. Set up environment variables: Create a `.env` file in the project root with your configuration:
 
    ```sh
+   # Required: OpenAI API key
    OPENAI_API_KEY=your_openai_api_key_here
+
+   # Optional: OpenTelemetry configuration
+   ENABLE_TELEMETRY=true
+   OTEL_SERVICE_NAME=pdf-form-filler
+   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
    ```
 
 ## Usage
@@ -80,7 +86,7 @@ To list all field names in a PDF form, use the utility script:
 python get_fields.py <blank.pdf>
 ```
 
-#### Example
+#### Fill Example
 
 ```sh
 python get_fields.py ESD-job-search-log-blank.pdf
@@ -105,6 +111,81 @@ contacts:
     contact_type: "application/resume"
   # ... add at least 3 contacts
 ```
+
+## Observability with OpenTelemetry
+
+This application is instrumented with OpenTelemetry to provide comprehensive observability into PDF processing operations.
+
+### What is Instrumented
+
+The application automatically traces:
+
+1. **PDF Processing Pipeline**
+
+   - YAML data loading
+   - PDF reading and writing
+   - Form field population
+
+2. **Contact Enrichment**
+
+   - OpenAI API calls for company information lookup
+   - Success/failure tracking
+   - Individual contact processing
+
+3. **Error Tracking**
+   - API failures
+   - Missing business information
+   - Data validation errors
+
+### Telemetry Configuration
+
+Configure telemetry through environment variables in your `.env` file:
+
+```sh
+# Enable/disable telemetry (default: true)
+ENABLE_TELEMETRY=true
+
+# Service name in traces (default: pdf-form-filler)
+OTEL_SERVICE_NAME=pdf-form-filler
+
+# OTLP collector endpoint (default: http://localhost:4317)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
+
+### Viewing Traces
+
+To view traces, you need an OpenTelemetry-compatible backend such as:
+
+- **Jaeger**: Distributed tracing platform
+- **Zipkin**: Distributed tracing system
+- **Grafana Tempo**: High-scale distributed tracing backend
+- **Cloud providers**: AWS X-Ray, Google Cloud Trace, Azure Monitor
+
+#### Quick Start with Jaeger (Docker)
+
+Run Jaeger locally using Docker:
+
+```sh
+docker run -d --name jaeger \
+  -p 4317:4317 \
+  -p 16686:16686 \
+  jaegertracing/all-in-one:latest
+```
+
+Then access the Jaeger UI at `http://localhost:16686` to view traces.
+
+### Trace Information
+
+Each trace includes:
+
+- **Span attributes**: File paths, contact counts, business names
+- **Timing information**: Duration of each operation
+- **Error details**: Exception messages and stack traces
+- **Success indicators**: Whether operations completed successfully
+
+### Disabling Telemetry
+
+To disable telemetry, set `ENABLE_TELEMETRY=false` in your `.env` file. The application will use a no-op tracer with zero performance overhead.
 
 ## Development & Contribution
 
