@@ -188,39 +188,78 @@ def set_checkbox(
         writer.update_page_form_field_values(p, {field_name: target})
 
 
+def _extract_appearance_states(widget_obj) -> list[str]:
+    """Extract non-off appearance states from a single widget object.
+
+    Returns:
+    - A list of valid appearance state names.
+    """
+    states = []
+    try:
+        n = widget_obj.get("/AP", {}).get("/N")
+        if not hasattr(n, "keys"):
+            return states
+
+        for k in n.keys():
+            s = str(k).lstrip("/")
+            if s and s.lower() != "off":
+                states.append(s)
+    except Exception:
+        pass
+    return states
+
+
+def _get_field_object(fields: dict[str, Any], field_name: str):
+    """Safely retrieve and resolve a field object.
+
+    Returns:
+    - The resolved field object or None if not found.
+    """
+    try:
+        fobj = fields[field_name]
+        try:
+            return fobj.get_object()
+        except Exception:
+            return fobj
+    except Exception:
+        return None
+
+
+def _deduplicate_list(items: list[str]) -> list[str]:
+    """Remove duplicates while preserving order.
+
+    Returns:
+    - A list with duplicates removed.
+    """
+    seen = set()
+    result = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
 def _radio_on_values(fields: dict[str, Any], group_name: str) -> list[str]:
     """Enumerate valid appearance states for the radio button group.
 
     Returns:
     - A de-duplicated list of available non-off option names.
     """
+    fobj = _get_field_object(fields, group_name)
+
+    if fobj is None or KIDS not in fobj:
+        return []
+
     vals = []
-    try:
-        fobj = fields[group_name]
+    for kid in fobj[KIDS]:
         try:
-            fobj = fobj.get_object()
+            ko = kid.get_object()
+            vals.extend(_extract_appearance_states(ko))
         except Exception:
             pass
-        if KIDS in fobj:
-            for kid in fobj[KIDS]:
-                try:
-                    ko = kid.get_object()
-                    n = ko.get("/AP", {}).get("/N")
-                    if hasattr(n, "keys"):
-                        for k in n.keys():
-                            s = str(k).lstrip("/")
-                            if s and s.lower() != "off":
-                                vals.append(s)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-    seen, out = set(), []
-    for v in vals:
-        if v not in seen:
-            seen.add(v)
-            out.append(v)
-    return out
+
+    return _deduplicate_list(vals)
 
 
 def set_radio_group(
