@@ -62,6 +62,7 @@ def _get_otlp_endpoint() -> str:
     """
     return os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
 
+
 def _create_resource() -> Resource:
     resource = Resource.create(
         {
@@ -112,6 +113,7 @@ def _setup_telemetry() -> trace.Tracer:
 
     return trace.get_tracer(__name__)
 
+
 def _setup_metrics() -> metrics.Meter:
     """Initialize OpenTelemetry metrics with OTLP export.
 
@@ -154,7 +156,8 @@ def shutdown_telemetry() -> None:
     """Flush and shutdown the tracer and meter providers.
 
     This ensures all pending spans and metrics are exported before the
-    application exits. Call this at the end of the application lifecycle.
+    application exits. Call this at the end of the application
+    lifecycle.
     """
     if _is_telemetry_enabled():
         # Shutdown tracer provider
@@ -162,7 +165,7 @@ def shutdown_telemetry() -> None:
 
         if hasattr(trace_provider, "shutdown"):
             trace_provider.shutdown()
-        
+
         # Shutdown meter provider
         meter_provider = metrics.get_meter_provider()
 

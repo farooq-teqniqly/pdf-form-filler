@@ -3,6 +3,7 @@
 import argparse
 from pypdf import PdfReader
 
+
 def main(pdf_in):
     """Extract and print all field names from a PDF form.
 
@@ -13,6 +14,7 @@ def main(pdf_in):
     fields = r.get_fields()
     for k, v in sorted((fields or {}).items()):
         print(k)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Get fields from a PDF")
