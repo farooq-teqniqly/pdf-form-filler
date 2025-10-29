@@ -78,7 +78,7 @@ def _create_resource() -> Resource:
     return resource
 
 
-def __get_noop_tracer() -> Tracer:
+def __get_noop_tracer() -> trace.Tracer:
     trace.set_tracer_provider(trace.NoOpTracerProvider())
     return trace.get_tracer(__name__)
 
