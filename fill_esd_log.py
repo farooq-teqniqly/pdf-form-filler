@@ -25,9 +25,9 @@ from telemetry import (
     contact_enrichment_failed_counter,
     pdf_processing_duration,
     contact_enrichment_duration,
-    SpanAttributes,
 )
 from opentelemetry.trace import Status, StatusCode
+import telemetry_constants
 import time
 
 load_dotenv()
@@ -458,7 +458,9 @@ def main() -> None:
 
             # Load YAML data
             with tracer.start_as_current_span("load_yaml_data") as yaml_span:
-                yaml_span.set_attribute(SpanAttributes.FILE_PATH, args.yaml_in)
+                yaml_span.set_attribute(
+                    telemetry_constants.SPAN_ATTR_FILE_PATH, args.yaml_in
+                )
 
                 with open(args.yaml_in, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
@@ -474,7 +476,9 @@ def main() -> None:
 
             # Read PDF
             with tracer.start_as_current_span("read_pdf") as pdf_span:
-                pdf_span.set_attribute(SpanAttributes.FILE_PATH, args.pdf_in)
+                pdf_span.set_attribute(
+                    telemetry_constants.SPAN_ATTR_FILE_PATH, args.pdf_in
+                )
                 reader = PdfReader(args.pdf_in)
                 writer = PdfWriter()
                 clone_form(reader, writer)
@@ -529,7 +533,8 @@ def main() -> None:
 
                             if "error" in contact_info:
                                 contact_span.set_attribute(
-                                    SpanAttributes.ENRICHMENT_SUCCESS, False
+                                    telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS,
+                                    False,
                                 )
 
                                 contact_span.set_attribute(
@@ -551,7 +556,8 @@ def main() -> None:
                                 )
                             else:
                                 contact_span.set_attribute(
-                                    SpanAttributes.ENRICHMENT_SUCCESS, True
+                                    telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS,
+                                    True,
                                 )
                                 c["address"] = contact_info["address"]
                                 c["city"] = contact_info["city"]
@@ -565,7 +571,7 @@ def main() -> None:
                                 )
                         except Exception as e:
                             contact_span.set_attribute(
-                                SpanAttributes.ENRICHMENT_SUCCESS, False
+                                telemetry_constants.SPAN_ATTR_ENRICHMENT_SUCCESS, False
                             )
                             contact_span.set_status(Status(StatusCode.ERROR))
                             contact_span.record_exception(e)
@@ -601,7 +607,9 @@ def main() -> None:
 
             # Write PDF
             with tracer.start_as_current_span("write_pdf") as write_span:
-                write_span.set_attribute(SpanAttributes.FILE_PATH, args.pdf_out)
+                write_span.set_attribute(
+                    telemetry_constants.SPAN_ATTR_FILE_PATH, args.pdf_out
+                )
 
                 with open(args.pdf_out, "wb") as out_f:
                     writer.write(out_f)

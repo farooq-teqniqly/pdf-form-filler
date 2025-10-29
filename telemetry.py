@@ -15,7 +15,6 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.instrumentation.openai import OpenAIInstrumentor
-from dataclasses import dataclass
 
 
 def _is_telemetry_enabled() -> bool:
@@ -222,11 +221,3 @@ contact_enrichment_duration = meter.create_histogram(
     description="Duration of contact enrichment operations",
     unit="ms",
 )
-
-
-@dataclass(frozen=True)
-class SpanAttributes:
-    LOOKUP_SUCCESS: str = "lookup.success"
-    ERROR_TYPE: str = "error.type"
-    FILE_PATH: str = "file.path"
-    ENRICHMENT_SUCCESS: str = "enrichment.success"
