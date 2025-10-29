@@ -25,6 +25,7 @@ from telemetry import (
     contact_enrichment_failed_counter,
     pdf_processing_duration,
     contact_enrichment_duration,
+    SpanAttributes,
 )
 from opentelemetry.trace import Status, StatusCode
 import time
@@ -34,7 +35,6 @@ load_dotenv()
 VERBOSE: bool = False
 ACRO_FORM: str = "/AcroForm"
 KIDS: str = "/Kids"
-
 try:
     open_api_client = OpenAI()
     contact_info_service = ContactInfoService(open_api_client)
@@ -224,7 +224,6 @@ def _radio_on_values(fields: dict[str, Any], group_name: str) -> list[str]:
 
 
 def set_radio_group(
-    page,
     writer: PdfWriter,
     fields: dict[str, Any],
     group_name: str,
@@ -237,7 +236,7 @@ def set_radio_group(
     - Then case-insensitive substring match.
     - Falls back to the first available option if none match.
 
-    Parameters mirror those of set_checkbox for page, writer, and fields.
+    Parameters mirror those of set_checkbox for writer and fields.
     """
     if not desired:
         return
@@ -343,13 +342,13 @@ def fill_contact_block(
         activity = "worksource-activity"
     if activity in ("other", "other activity"):
         activity = "other-activity"
-    set_radio_group(page, writer, fields, px + "activity", activity)
+    set_radio_group(writer, fields, px + "activity", activity)
 
     # Contact type radio group
     ctype = (contact.get("contact_type") or "").strip().lower()
     if ctype in ("application", "application/resume", "application_resume", "resume"):
         ctype = "application-resume"
-    set_radio_group(page, writer, fields, px + "contact-type", ctype)
+    set_radio_group(writer, fields, px + "contact-type", ctype)
     if ctype == "other" and "contact_type_other" in contact:
         set_text(
             page,
@@ -459,7 +458,7 @@ def main() -> None:
 
             # Load YAML data
             with tracer.start_as_current_span("load_yaml_data") as yaml_span:
-                yaml_span.set_attribute("file.path", args.yaml_in)
+                yaml_span.set_attribute(SpanAttributes.FILE_PATH, args.yaml_in)
 
                 with open(args.yaml_in, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
@@ -475,7 +474,7 @@ def main() -> None:
 
             # Read PDF
             with tracer.start_as_current_span("read_pdf") as pdf_span:
-                pdf_span.set_attribute("file.path", args.pdf_in)
+                pdf_span.set_attribute(SpanAttributes.FILE_PATH, args.pdf_in)
                 reader = PdfReader(args.pdf_in)
                 writer = PdfWriter()
                 clone_form(reader, writer)
@@ -529,7 +528,9 @@ def main() -> None:
                             )
 
                             if "error" in contact_info:
-                                contact_span.set_attribute("enrichment.success", False)
+                                contact_span.set_attribute(
+                                    SpanAttributes.ENRICHMENT_SUCCESS, False
+                                )
 
                                 contact_span.set_attribute(
                                     "enrichment.error", contact_info["error"]
@@ -549,7 +550,9 @@ def main() -> None:
                                     file=sys.stderr,
                                 )
                             else:
-                                contact_span.set_attribute("enrichment.success", True)
+                                contact_span.set_attribute(
+                                    SpanAttributes.ENRICHMENT_SUCCESS, True
+                                )
                                 c["address"] = contact_info["address"]
                                 c["city"] = contact_info["city"]
                                 c["state"] = contact_info["state"]
@@ -561,7 +564,9 @@ def main() -> None:
                                     1, {"business_name": business_name}
                                 )
                         except Exception as e:
-                            contact_span.set_attribute("enrichment.success", False)
+                            contact_span.set_attribute(
+                                SpanAttributes.ENRICHMENT_SUCCESS, False
+                            )
                             contact_span.set_status(Status(StatusCode.ERROR))
                             contact_span.record_exception(e)
 
@@ -596,7 +601,7 @@ def main() -> None:
 
             # Write PDF
             with tracer.start_as_current_span("write_pdf") as write_span:
-                write_span.set_attribute("file.path", args.pdf_out)
+                write_span.set_attribute(SpanAttributes.FILE_PATH, args.pdf_out)
 
                 with open(args.pdf_out, "wb") as out_f:
                     writer.write(out_f)

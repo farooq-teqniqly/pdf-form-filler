@@ -17,6 +17,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.instrumentation.openai import OpenAIInstrumentor
 from dataclasses import dataclass
 
+
 def _is_telemetry_enabled() -> bool:
     """Check if telemetry is enabled via environment variable.
 
@@ -78,7 +79,7 @@ def _create_resource() -> Resource:
     return resource
 
 
-def __get_noop_tracer() -> Tracer:
+def __get_noop_tracer() -> trace.Tracer:
     trace.set_tracer_provider(trace.NoOpTracerProvider())
     return trace.get_tracer(__name__)
 
@@ -225,5 +226,7 @@ contact_enrichment_duration = meter.create_histogram(
 
 @dataclass(frozen=True)
 class SpanAttributes:
-    LOOKUP_SUCCESS: "lookup.success"
-    ERROR_TYPE: "error.type"
+    LOOKUP_SUCCESS: str = "lookup.success"
+    ERROR_TYPE: str = "error.type"
+    FILE_PATH: str = "file.path"
+    ENRICHMENT_SUCCESS: str = "enrichment.success"
