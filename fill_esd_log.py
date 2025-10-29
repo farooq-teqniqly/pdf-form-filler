@@ -17,6 +17,17 @@ from typing import Any, Dict, List
 from dotenv import load_dotenv
 from contact_info_service import ContactInfoService
 from openai import OpenAI
+from telemetry import (
+    tracer,
+    shutdown_telemetry,
+    pdf_processed_counter,
+    contact_enriched_counter,
+    contact_enrichment_failed_counter,
+    pdf_processing_duration,
+    contact_enrichment_duration,
+)
+from opentelemetry.trace import Status, StatusCode
+import time
 
 load_dotenv()
 
@@ -418,85 +429,203 @@ def main() -> None:
       fills header and contact blocks, and writes the result.
     - Exits with code 2 on PDF read errors.
     """
-    parser = argparse.ArgumentParser(description="Fill WA ESD PDF (clean field names).")
-    parser.add_argument("pdf_in", help="Renamed/cleaned WA ESD PDF")
-    parser.add_argument("yaml_in", help="Weekly YAML data file")
-    parser.add_argument("pdf_out", help="Output filled PDF")
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable debug warnings for missing PDF fields",
-    )
-    args = parser.parse_args()
-
-    # Enable verbose via flag or ESD_VERBOSE env var
-    global VERBOSE
-    VERBOSE = bool(args.verbose or _is_truthy_env(os.getenv("ESD_VERBOSE")))
-
-    with open(args.yaml_in, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-
-    contacts: List[Dict[str, Any]] = data.get("contacts", [])
-
-    if len(contacts) < 3:
-        print(
-            "Warning: fewer than 3 contacts in data; the form expects at least 3.",
-            file=sys.stderr,
-        )
-
-    reader = PdfReader(args.pdf_in)
-    writer = PdfWriter()
-    clone_form(reader, writer)
-    set_need_appearances(writer)
-
-    fields = reader.get_fields() or {}
-    page = first_page(writer)
-
-    # Header
-    set_text(page, writer, fields, "name", data.get("name"))
-    set_text(page, writer, fields, "ssn", data.get("ssn"))
-    set_text(
-        page,
-        writer,
-        fields,
-        "week-ending",
-        data.get("week_ending") or data.get("week-ending"),
-    )
-
-    # Contacts
-    for idx in (1, 2, 3):
-        c = contacts[idx - 1] if len(contacts) >= idx else {}
-
-        business_name = c.get("business_name")
-
-        if not business_name:
-            _debug(f"Contact {idx} missing business_name, skipping enrichment")
-
+    with tracer.start_as_current_span("fill_pdf_form") as span:
+        start_time = time.time()
         try:
-            contact_info = contact_info_service.get_contact_info(c["business_name"])
+            parser = argparse.ArgumentParser(
+                description="Fill WA ESD PDF (clean field names)."
+            )
+            parser.add_argument("pdf_in", help="Renamed/cleaned WA ESD PDF")
+            parser.add_argument("yaml_in", help="Weekly YAML data file")
+            parser.add_argument("pdf_out", help="Output filled PDF")
+            parser.add_argument(
+                "-v",
+                "--verbose",
+                action="store_true",
+                help="Enable debug warnings for missing PDF fields",
+            )
+            args = parser.parse_args()
 
-            if "error" in contact_info:
+            # Add span attributes
+            span.set_attribute("pdf.input_path", args.pdf_in)
+            span.set_attribute("pdf.output_path", args.pdf_out)
+            span.set_attribute("yaml.input_path", args.yaml_in)
+
+            # Enable verbose via flag or ESD_VERBOSE env var
+            global VERBOSE
+            VERBOSE = bool(args.verbose or _is_truthy_env(os.getenv("ESD_VERBOSE")))
+
+            # Load YAML data
+            with tracer.start_as_current_span("load_yaml_data") as yaml_span:
+                yaml_span.set_attribute("file.path", args.yaml_in)
+
+                with open(args.yaml_in, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+
+                contacts: List[Dict[str, Any]] = data.get("contacts", [])
+                yaml_span.set_attribute("contacts.count", len(contacts))
+
+            if len(contacts) < 3:
                 print(
-                    f"Warning: Could not enrich contact {idx}: {contact_info['error']}",
+                    "Warning: fewer than 3 contacts in data; the form expects at least 3.",
                     file=sys.stderr,
                 )
-            else:
-                c["address"] = contact_info["address"]
-                c["city"] = contact_info["city"]
-                c["state"] = contact_info["state"]
-                c["website_or_email"] = contact_info["website_or_email"]
-                c["phone"] = contact_info["phone"]
-        except Exception as e:
-            print(
-                f"Warning: Failed to enrich contact {idx} ({business_name}): {e}",
-                file=sys.stderr,
+
+            # Read PDF
+            with tracer.start_as_current_span("read_pdf") as pdf_span:
+                pdf_span.set_attribute("file.path", args.pdf_in)
+                reader = PdfReader(args.pdf_in)
+                writer = PdfWriter()
+                clone_form(reader, writer)
+                set_need_appearances(writer)
+                fields = reader.get_fields() or {}
+                page = first_page(writer)
+
+            # Fill header
+            set_text(page, writer, fields, "name", data.get("name"))
+            set_text(page, writer, fields, "ssn", data.get("ssn"))
+
+            set_text(
+                page,
+                writer,
+                fields,
+                "week-ending",
+                data.get("week_ending") or data.get("week-ending"),
             )
 
-        fill_contact_block(idx, c, page, writer, fields)
+            # Enrich and fill contacts
+            with tracer.start_as_current_span("enrich_contacts") as enrich_span:
+                enrich_span.set_attribute("contacts.total", 3)
+                enrich_span.set_attribute("contacts.provided", len(contacts))
 
-    with open(args.pdf_out, "wb") as out_f:
-        writer.write(out_f)
+                for idx in (1, 2, 3):
+                    c = contacts[idx - 1] if len(contacts) >= idx else {}
+
+                    business_name = c.get("business_name")
+
+                    if not business_name:
+                        _debug(
+                            f"Contact {idx} missing business_name, skipping enrichment"
+                        )
+
+                        fill_contact_block(idx, c, page, writer, fields)
+                        continue
+
+                    with tracer.start_as_current_span(
+                        f"enrich_contact_{idx}"
+                    ) as contact_span:
+                        enrichment_start = time.time()
+                        contact_span.set_attribute("contact.index", idx)
+
+                        contact_span.set_attribute(
+                            "contact.business_name", business_name
+                        )
+
+                        try:
+                            contact_info = contact_info_service.get_contact_info(
+                                c["business_name"]
+                            )
+
+                            if "error" in contact_info:
+                                contact_span.set_attribute("enrichment.success", False)
+
+                                contact_span.set_attribute(
+                                    "enrichment.error", contact_info["error"]
+                                )
+
+                                # Record failure metric
+                                contact_enrichment_failed_counter.add(
+                                    1,
+                                    {
+                                        "error_type": "business_not_found",
+                                        "business_name": business_name,
+                                    },
+                                )
+
+                                print(
+                                    f"Warning: Could not enrich contact {idx}: {contact_info['error']}",
+                                    file=sys.stderr,
+                                )
+                            else:
+                                contact_span.set_attribute("enrichment.success", True)
+                                c["address"] = contact_info["address"]
+                                c["city"] = contact_info["city"]
+                                c["state"] = contact_info["state"]
+                                c["website_or_email"] = contact_info["website_or_email"]
+                                c["phone"] = contact_info["phone"]
+
+                                # Record success metric
+                                contact_enriched_counter.add(
+                                    1, {"business_name": business_name}
+                                )
+                        except Exception as e:
+                            contact_span.set_attribute("enrichment.success", False)
+                            contact_span.set_status(Status(StatusCode.ERROR))
+                            contact_span.record_exception(e)
+
+                            # Record failure metric
+                            contact_enrichment_failed_counter.add(
+                                1,
+                                {
+                                    "error_type": "exception",
+                                    "business_name": business_name,
+                                },
+                            )
+
+                            print(
+                                f"Warning: Failed to enrich contact {idx} ({business_name}): {e}",
+                                file=sys.stderr,
+                            )
+                        finally:
+                            # Record enrichment duration
+                            enrichment_duration_ms = (
+                                time.time() - enrichment_start
+                            ) * 1000
+
+                            contact_enrichment_duration.record(
+                                enrichment_duration_ms,
+                                {
+                                    "contact_index": str(idx),
+                                    "business_name": business_name,
+                                },
+                            )
+
+                    fill_contact_block(idx, c, page, writer, fields)
+
+            # Write PDF
+            with tracer.start_as_current_span("write_pdf") as write_span:
+                write_span.set_attribute("file.path", args.pdf_out)
+
+                with open(args.pdf_out, "wb") as out_f:
+                    writer.write(out_f)
+
+            span.set_attribute("pdf.processing_complete", True)
+
+            # Record PDF processing metrics
+            processing_duration_ms = (time.time() - start_time) * 1000
+
+            pdf_processing_duration.record(
+                processing_duration_ms, {"status": "success"}
+            )
+
+            pdf_processed_counter.add(1, {"status": "success"})
+
+        except Exception as e:
+            span.set_status(Status(StatusCode.ERROR))
+            span.record_exception(e)
+
+            # Record failure metrics
+            processing_duration_ms = (time.time() - start_time) * 1000
+
+            pdf_processing_duration.record(
+                processing_duration_ms, {"status": "failure"}
+            )
+
+            pdf_processed_counter.add(1, {"status": "failure"})
+
+            raise
+        finally:
+            shutdown_telemetry()
 
 
 if __name__ == "__main__":

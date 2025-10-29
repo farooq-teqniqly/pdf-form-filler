@@ -1,19 +1,22 @@
 import json
 from typing import ClassVar
+from telemetry import tracer
+from opentelemetry.trace import Status, StatusCode
+from jsonschema import validate, ValidationError
 
 
 class ContactInfoServiceError(Exception):
-    """Exception raised when ContactInfoService initialization or operation fails."""
-
-    pass
+    """Exception raised when ContactInfoService initialization or operation
+    fails."""
 
 
 class ContactInfoService:
-    """Service for retrieving and enriching company contact information using OpenAI.
+    """Service for retrieving and enriching company contact information using
+    OpenAI.
 
-    This class provides functionality to look up official contact details
-    for companies (address, city, state, website/email, phone) using OpenAI's
-    search capabilities and JSON schema validation.
+    This class provides functionality to look up official contact
+    details for companies (address, city, state, website/email, phone)
+    using OpenAI's search capabilities and JSON schema validation.
     """
 
     __CONTACT_INFO_FORMAT: ClassVar[dict] = {
@@ -131,47 +134,82 @@ class ContactInfoService:
         Raises:
             ContactInfoServiceError: If the API call fails or returns invalid data.
         """
+        with tracer.start_as_current_span("get_contact_info") as span:
+            span.set_attribute("business_name", business_name)
 
-        try:
-            response = self.open_ai_client.responses.create(
-                model="gpt-4o-mini",
-                tools=[{"type": "web_search"}],
-                input=[
-                    {
-                        "role": "user",
-                        "content": f"""
+            try:
+                response = self.open_ai_client.responses.create(
+                    model="gpt-4o-mini",
+                    tools=[{"type": "web_search"}],
+                    input=[
+                        {
+                            "role": "user",
+                            "content": f"""
                         Find the official contact information for the company named {business_name}.
                         {self.__get_user_prompt(business_name)}
                     """,
-                    }
-                ],
-                text=self.__CONTACT_INFO_FORMAT,
-                metadata={"purpose": "esd_business_name_lookup"},
-            )
-        except Exception as e:
-            raise ContactInfoServiceError(
-                f"OpenAI API call failed for '{business_name}': {e}"
-            ) from e
+                        }
+                    ],
+                    text=self.__CONTACT_INFO_FORMAT,
+                    metadata={"purpose": "esd_business_name_lookup"},
+                )
+            except Exception as e:
+                span.set_attribute("lookup.success", False)
+                span.set_attribute("error.type", "api_error")
+                span.set_status(Status(StatusCode.ERROR))
+                span.record_exception(e)
 
-        try:
-            data = json.loads(response.output_text)
-        except json.decoder.JSONDecodeError as e:
-            raise ContactInfoServiceError(
-                f"Invalid JSON response for '{business_name}': {e}"
-            ) from e
+                raise ContactInfoServiceError(
+                    f"OpenAI API call failed for '{business_name}': {e}"
+                ) from e
 
-        if "error" in data:
+            try:
+                data = json.loads(response.output_text)
+            except json.decoder.JSONDecodeError as e:
+                span.set_attribute("lookup.success", False)
+                span.set_attribute("error.type", "json_decode_error")
+                span.set_status(Status(StatusCode.ERROR))
+                span.record_exception(e)
+
+                raise ContactInfoServiceError(
+                    f"Invalid JSON response for '{business_name}': {e}"
+                ) from e
+
+            if "error" in data:
+                span.set_attribute("lookup.success", False)
+                span.set_attribute("error.type", "business_not_found")
+                span.set_attribute("error.message", data["error"])
+                return data
+
+            required_fields = self._ContactInfoService__CONTACT_INFO_FORMAT["format"][
+                "schema"
+            ]["required"]
+
+            schema = self._ContactInfoService__CONTACT_INFO_FORMAT["format"]["schema"]
+            required_fields = schema["required"]
+            missing_fields = [field for field in required_fields if field not in data]
+
+            if missing_fields:
+                span.set_attribute("lookup.success", False)
+                span.set_attribute("error.type", "missing_fields")
+                span.set_attribute("error.missing_fields", ", ".join(missing_fields))
+                span.set_status(Status(StatusCode.ERROR))
+                span.record_exception(e)
+
+                raise ContactInfoServiceError(
+                    f"Response missing required fields: {', '.join(missing_fields)}"
+                ) from e
+
+            try:
+                validate(data, schema)
+            except ValidationError as e:
+                span.set_attribute("lookup.success", False)
+                span.set_attribute("error.type", "schema_validation_error")
+                span.set_status(Status(StatusCode.ERROR))
+                span.record_exception(e)
+
+            span.set_attribute("lookup.success", True)
+            span.set_attribute("result.city", data.get("city", ""))
+            span.set_attribute("result.state", data.get("state", ""))
+
             return data
-
-        required_fields = self._ContactInfoService__CONTACT_INFO_FORMAT["format"][
-            "schema"
-        ]["required"]
-
-        missing_fields = [field for field in required_fields if field not in data]
-
-        if missing_fields:
-            return {
-                "error": f"Response missing required fields: {', '.join(missing_fields)}"
-            }
-
-        return data
