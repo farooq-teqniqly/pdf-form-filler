@@ -17,8 +17,17 @@ from typing import Any, Dict, List
 from dotenv import load_dotenv
 from contact_info_service import ContactInfoService
 from openai import OpenAI
-from telemetry import tracer, shutdown_telemetry
+from telemetry import (
+    tracer,
+    shutdown_telemetry,
+    pdf_processed_counter,
+    contact_enriched_counter,
+    contact_enrichment_failed_counter,
+    pdf_processing_duration,
+    contact_enrichment_duration,
+)
 from opentelemetry.trace import Status, StatusCode
+import time
 
 load_dotenv()
 
@@ -421,6 +430,7 @@ def main() -> None:
     - Exits with code 2 on PDF read errors.
     """
     with tracer.start_as_current_span("fill_pdf_form") as span:
+        start_time = time.time()
         try:
             parser = argparse.ArgumentParser(
                 description="Fill WA ESD PDF (clean field names)."
@@ -504,6 +514,7 @@ def main() -> None:
                     with tracer.start_as_current_span(
                         f"enrich_contact_{idx}"
                     ) as contact_span:
+                        enrichment_start = time.time()
                         contact_span.set_attribute("contact.index", idx)
 
                         contact_span.set_attribute(
@@ -521,6 +532,15 @@ def main() -> None:
                                 contact_span.set_attribute(
                                     "enrichment.error", contact_info["error"]
                                 )
+                                
+                                # Record failure metric
+                                contact_enrichment_failed_counter.add(
+                                    1,
+                                    {
+                                        "error_type": "business_not_found",
+                                        "business_name": business_name,
+                                    },
+                                )
 
                                 print(
                                     f"Warning: Could not enrich contact {idx}: {contact_info['error']}",
@@ -533,14 +553,38 @@ def main() -> None:
                                 c["state"] = contact_info["state"]
                                 c["website_or_email"] = contact_info["website_or_email"]
                                 c["phone"] = contact_info["phone"]
+                                
+                                # Record success metric
+                                contact_enriched_counter.add(
+                                    1, {"business_name": business_name}
+                                )
                         except Exception as e:
                             contact_span.set_attribute("enrichment.success", False)
                             contact_span.set_status(Status(StatusCode.ERROR))
                             contact_span.record_exception(e)
+                            
+                            # Record failure metric
+                            contact_enrichment_failed_counter.add(
+                                1,
+                                {
+                                    "error_type": "exception",
+                                    "business_name": business_name,
+                                },
+                            )
 
                             print(
                                 f"Warning: Failed to enrich contact {idx} ({business_name}): {e}",
                                 file=sys.stderr,
+                            )
+                        finally:
+                            # Record enrichment duration
+                            enrichment_duration_ms = (
+                                time.time() - enrichment_start
+                            ) * 1000
+
+                            contact_enrichment_duration.record(
+                                enrichment_duration_ms,
+                                {"contact_index": str(idx), "business_name": business_name},
                             )
 
                     fill_contact_block(idx, c, page, writer, fields)
@@ -553,10 +597,29 @@ def main() -> None:
                     writer.write(out_f)
 
             span.set_attribute("pdf.processing_complete", True)
+            
+            # Record PDF processing metrics
+            processing_duration_ms = (time.time() - start_time) * 1000
+
+            pdf_processing_duration.record(
+                processing_duration_ms, {"status": "success"}
+            )
+
+            pdf_processed_counter.add(1, {"status": "success"})
 
         except Exception as e:
             span.set_status(Status(StatusCode.ERROR))
             span.record_exception(e)
+            
+            # Record failure metrics
+            processing_duration_ms = (time.time() - start_time) * 1000
+
+            pdf_processing_duration.record(
+                processing_duration_ms, {"status": "failure"}
+            )
+
+            pdf_processed_counter.add(1, {"status": "failure"})
+            
             raise
         finally:
             shutdown_telemetry()

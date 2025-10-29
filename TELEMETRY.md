@@ -10,6 +10,8 @@ The application uses OpenTelemetry to provide comprehensive observability into t
 - Automatic instrumentation of OpenAI API calls
 - Error tracking and exception recording
 - Performance monitoring
+- Custom metrics (counters and histograms)
+- Duration tracking for operations
 
 ## Architecture
 
@@ -93,6 +95,90 @@ fill_pdf_form (root span)
 - `result.state`: State from lookup result
 - `error.type`: Type of error (api_error, json_decode_error, business_not_found, missing_fields)
 - `error.message`: Detailed error message
+
+## Metrics
+
+The application exports custom metrics to track key performance indicators and operational statistics.
+
+### Available Metrics
+
+#### Counters
+
+1. **pdf.processed.total**
+
+   - Description: Total number of PDFs processed
+   - Unit: `1` (count)
+   - Attributes:
+     - `status`: Processing status (`success` or `failure`)
+   - Use case: Track overall PDF processing volume and success rate
+
+2. **contact.enriched.total**
+
+   - Description: Total number of contacts successfully enriched
+   - Unit: `1` (count)
+   - Attributes:
+     - `business_name`: Name of the company looked up
+   - Use case: Monitor contact enrichment success rate
+
+3. **contact.enrichment.failed.total**
+   - Description: Total number of contact enrichment failures
+   - Unit: `1` (count)
+   - Attributes:
+     - `error_type`: Type of error (`business_not_found`, `exception`)
+     - `business_name`: Name of the company that failed
+   - Use case: Identify problematic companies and error patterns
+
+#### Histograms
+
+1. **pdf.processing.duration**
+
+   - Description: Duration of PDF processing operations (end-to-end)
+   - Unit: `ms` (milliseconds)
+   - Attributes:
+     - `status`: Processing status (`success` or `failure`)
+   - Use case: Monitor performance and identify slow processing
+
+2. **contact.enrichment.duration**
+   - Description: Duration of individual contact enrichment operations
+   - Unit: `ms` (milliseconds)
+   - Attributes:
+     - `contact_index`: Contact number (`1`, `2`, or `3`)
+     - `business_name`: Name of the company looked up
+   - Use case: Identify slow API calls and optimize performance
+
+### Metrics Export
+
+- Metrics are exported every 60 seconds by default
+- Uses OTLP gRPC protocol to the configured endpoint
+- Metrics share the same endpoint as traces (`OTEL_EXPORTER_OTLP_ENDPOINT`)
+
+### Example Queries
+
+When using metrics with your observability backend, you can create useful queries:
+
+**Success Rate**:
+
+```text
+rate(pdf.processed.total{status="success"}) / rate(pdf.processed.total)
+```
+
+**Average Processing Time**:
+
+```text
+avg(pdf.processing.duration)
+```
+
+**Contact Enrichment Failure Rate**:
+
+```text
+rate(contact.enrichment.failed.total) / (rate(contact.enriched.total) + rate(contact.enrichment.failed.total))
+```
+
+**95th Percentile Enrichment Duration**:
+
+```text
+histogram_quantile(0.95, contact.enrichment.duration)
+```
 
 ## Configuration
 
@@ -243,24 +329,19 @@ All exceptions are recorded with:
 
 Potential improvements for observability:
 
-1. **Metrics**: Add counters and histograms for:
-
-   - Total PDFs processed
-   - Contact enrichment success rate
-   - Processing duration distribution
-
-2. **Logging**: Integrate OpenTelemetry logging
+1. ### Logging: Integrate OpenTelemetry logging
 
    - Correlate logs with traces
    - Structured logging with trace context
 
-3. **Baggage**: Propagate user context
+2. ### Baggage: Propagate user context
 
    - User ID
    - Session information
    - Processing metadata
 
-4. **Sampling**: Implement adaptive sampling
+3. ### Sampling: Implement adaptive sampling
+
    - Sample based on error conditions
    - Priority sampling for important operations
 
