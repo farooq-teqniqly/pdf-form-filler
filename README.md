@@ -152,27 +152,39 @@ OTEL_SERVICE_NAME=pdf-form-filler
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 ```
 
-### Viewing Traces
+### Viewing Traces and Metrics
 
-To view traces, you need an OpenTelemetry-compatible backend such as:
+To view traces and metrics, you need an OpenTelemetry-compatible backend. For local development, we recommend the **Aspire Dashboard**.
+
+#### Quick Start with Aspire Dashboard (Recommended)
+
+The .NET Aspire Dashboard provides a unified UI for traces, metrics, and logs with zero configuration:
+
+```sh
+docker run -d --name aspire-dashboard \
+  -p 18888:18888 \
+  -p 4317:18889 \
+  mcr.microsoft.com/dotnet/aspire-dashboard:latest
+```
+
+Then access the dashboard at `http://localhost:18888` to view traces and metrics in real-time.
+
+**Why Aspire Dashboard?**
+
+- Unified view of traces, metrics, and logs
+- Real-time updates with no refresh needed
+- Built-in filtering and search capabilities
+- Lightweight and fast
+- No configuration required
+
+#### Alternative Options
+
+Other OpenTelemetry-compatible backends include:
 
 - **Jaeger**: Distributed tracing platform
 - **Zipkin**: Distributed tracing system
 - **Grafana Tempo**: High-scale distributed tracing backend
 - **Cloud providers**: AWS X-Ray, Google Cloud Trace, Azure Monitor
-
-#### Quick Start with Jaeger (Docker)
-
-Run Jaeger locally using Docker:
-
-```sh
-docker run -d --name jaeger \
-  -p 4317:4317 \
-  -p 16686:16686 \
-  jaegertracing/all-in-one:latest
-```
-
-Then access the Jaeger UI at `http://localhost:16686` to view traces.
 
 ### Trace Information
 

@@ -192,7 +192,38 @@ histogram_quantile(0.95, contact.enrichment.duration)
 
 ### Configuration Examples
 
-#### Local Development with Jaeger
+#### Local Development with Aspire Dashboard (Recommended)
+
+The .NET Aspire Dashboard provides an excellent local development experience with support for traces, metrics, and logs in a single unified UI.
+
+```sh
+# .env
+ENABLE_TELEMETRY=true
+OTEL_SERVICE_NAME=pdf-form-filler
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
+
+Start Aspire Dashboard:
+
+```sh
+docker run -d --name aspire-dashboard \
+  -p 18888:18888 \
+  -p 4317:18889 \
+  -e DASHBOARD__OTLP__AUTHMODE=Unsecured \
+  mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+```
+
+Then access the dashboard at `http://localhost:18888`
+
+**Benefits:**
+
+- Unified UI for traces, metrics, and logs
+- No configuration required
+- Lightweight and fast
+- Real-time updates
+- Built-in filtering and search
+
+#### Local Development with Jaeger (Alternative)
 
 ```sh
 # .env
@@ -209,6 +240,8 @@ docker run -d --name jaeger \
   -p 16686:16686 \
   jaegertracing/all-in-one:latest
 ```
+
+Then access the Jaeger UI at `http://localhost:16686`
 
 #### Cloud Provider (e.g., Grafana Cloud)
 
