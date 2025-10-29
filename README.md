@@ -2,6 +2,28 @@
 
 PDF Form Filler is a command-line tool for automatically filling out weekly job-search log PDF forms using structured YAML data. It leverages AI to look up and fill company contact information based on business names, making it easy to generate completed forms for submission. Designed for quick setup and use by developers.
 
+## Table of Contents
+
+- [Features](#features)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+- [Usage](#usage)
+  - [Prepare Your Files](#prepare-your-files)
+  - [Filler Script](#filler-script)
+  - [Utility Script: Extract PDF Fields](#utility-script-extract-pdf-fields)
+  - [YAML Data Example](#yaml-data-example)
+- [Observability with OpenTelemetry](#observability-with-opentelemetry)
+  - [What is Instrumented](#what-is-instrumented)
+  - [Telemetry Configuration](#telemetry-configuration)
+  - [Viewing Traces and Metrics](#viewing-traces-and-metrics)
+  - [Trace Information](#trace-information)
+  - [Disabling Telemetry](#disabling-telemetry)
+- [Development & Contribution](#development--contribution)
+  - [Code Style](#code-style)
+- [License](#license)
+- [Support](#support)
+
 ## Features
 
 - Fill out job-search log PDFs using YAML data
@@ -115,6 +137,8 @@ contacts:
 ## Observability with OpenTelemetry
 
 This application is instrumented with OpenTelemetry to provide comprehensive observability into PDF processing operations.
+
+> 📘 **For detailed telemetry documentation**, including metrics, span attributes, and advanced configuration, see [TELEMETRY.md](TELEMETRY.md).
 
 ### What is Instrumented
 

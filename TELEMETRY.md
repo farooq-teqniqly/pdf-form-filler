@@ -2,6 +2,28 @@
 
 This document provides detailed information about the OpenTelemetry instrumentation implemented in the PDF Form Filler application.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Trace Hierarchy](#trace-hierarchy)
+- [Span Attributes](#span-attributes)
+- [Metrics](#metrics)
+  - [Available Metrics](#available-metrics)
+  - [Metrics Export](#metrics-export)
+  - [Example Queries](#example-queries)
+- [Configuration](#configuration)
+  - [Environment Variables](#environment-variables)
+  - [Configuration Examples](#configuration-examples)
+- [Error Handling](#error-handling)
+  - [Error Types Tracked](#error-types-tracked)
+  - [Exception Recording](#exception-recording)
+- [Performance Considerations](#performance-considerations)
+- [Troubleshooting](#troubleshooting)
+- [Best Practices](#best-practices)
+- [Future Enhancements](#future-enhancements)
+- [Resources](#resources)
+
 ## Overview
 
 The application uses OpenTelemetry to provide comprehensive observability into the PDF processing pipeline, including:
@@ -209,8 +231,7 @@ Start Aspire Dashboard:
 docker run -d --name aspire-dashboard \
   -p 18888:18888 \
   -p 4317:18889 \
-  -e DASHBOARD__OTLP__AUTHMODE=Unsecured \
-  mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+  mcr.microsoft.com/dotnet/aspire-dashboard:latest
 ```
 
 Then access the dashboard at `http://localhost:18888`
