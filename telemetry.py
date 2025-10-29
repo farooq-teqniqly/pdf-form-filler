@@ -5,6 +5,7 @@ instrumentation for OpenAI API calls.
 """
 
 import os
+from dotenv import load_dotenv
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -32,8 +33,12 @@ def _is_insecure_mode() -> bool:
     Returns:
         bool: True for insecure connections (local dev), False for TLS.
     """
-    value = os.getenv("OTEL_EXPORTER_INSECURE", "true").strip().lower()
-    return value in ("1", "true", "yes", "on")
+    value = os.getenv("OTEL_EXPORTER_OTLP_INSECURE")
+
+    if value is None:
+        return False
+
+    return value.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _get_service_name() -> str:
@@ -73,6 +78,11 @@ def _create_resource() -> Resource:
     return resource
 
 
+def __get_noop_tracer() -> Tracer:
+    trace.set_tracer_provider(trace.NoOpTracerProvider())
+    return trace.get_tracer(__name__)
+
+
 def _setup_telemetry() -> trace.Tracer:
     """Initialize OpenTelemetry tracing with OTLP export.
 
@@ -87,8 +97,7 @@ def _setup_telemetry() -> trace.Tracer:
     """
     if not _is_telemetry_enabled():
         # Return a no-op tracer if telemetry is disabled
-        trace.set_tracer_provider(trace.NoOpTracerProvider())
-        return trace.get_tracer(__name__)
+        return __get_noop_tracer()
 
     # Create resource with service identification
     resource = _create_resource()
@@ -96,10 +105,14 @@ def _setup_telemetry() -> trace.Tracer:
     # Set up tracer provider
     provider = TracerProvider(resource=resource)
 
-    # Configure OTLP exporter
-    otlp_exporter = OTLPSpanExporter(
-        endpoint=_get_otlp_endpoint(), insecure=_is_insecure_mode()
-    )
+    try:
+        # Configure OTLP exporter
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=_get_otlp_endpoint(), insecure=_is_insecure_mode()
+        )
+    except Exception:
+        # Fallback to a no-op tracer provider to avoid crashing
+        return __get_noop_tracer()
 
     # Add batch span processor for efficient export
     processor = BatchSpanProcessor(otlp_exporter)
@@ -174,6 +187,7 @@ def shutdown_telemetry() -> None:
 
 
 # Initialize tracer and meter on module import
+load_dotenv()
 tracer = _setup_telemetry()
 meter = _setup_metrics()
 

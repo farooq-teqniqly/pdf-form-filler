@@ -2,13 +2,12 @@ import json
 from typing import ClassVar
 from telemetry import tracer
 from opentelemetry.trace import Status, StatusCode
+from jsonschema import validate, ValidationError
 
 
 class ContactInfoServiceError(Exception):
     """Exception raised when ContactInfoService initialization or operation
     fails."""
-
-    pass
 
 
 class ContactInfoService:
@@ -186,16 +185,28 @@ class ContactInfoService:
                 "schema"
             ]["required"]
 
+            schema = self._ContactInfoService__CONTACT_INFO_FORMAT["format"]["schema"]
+            required_fields = schema["required"]
             missing_fields = [field for field in required_fields if field not in data]
 
             if missing_fields:
                 span.set_attribute("lookup.success", False)
                 span.set_attribute("error.type", "missing_fields")
                 span.set_attribute("error.missing_fields", ", ".join(missing_fields))
+                span.set_status(Status(StatusCode.ERROR))
+                span.record_exception(e)
 
-                return {
-                    "error": f"Response missing required fields: {', '.join(missing_fields)}"
-                }
+                raise ContactInfoServiceError(
+                    f"Response missing required fields: {', '.join(missing_fields)}"
+                ) from e
+
+            try:
+                validate(data, schema)
+            except ValidationError as e:
+                span.set_attribute("lookup.success", False)
+                span.set_attribute("error.type", "schema_validation_error")
+                span.set_status(Status(StatusCode.ERROR))
+                span.record_exception(e)
 
             span.set_attribute("lookup.success", True)
             span.set_attribute("result.city", data.get("city", ""))

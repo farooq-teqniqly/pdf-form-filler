@@ -206,11 +206,12 @@ histogram_quantile(0.95, contact.enrichment.duration)
 
 ### Environment Variables
 
-| Variable                      | Default                 | Description                         |
-| ----------------------------- | ----------------------- | ----------------------------------- |
-| `ENABLE_TELEMETRY`            | `true`                  | Enable/disable telemetry collection |
-| `OTEL_SERVICE_NAME`           | `pdf-form-filler`       | Service name in traces              |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OTLP collector endpoint (gRPC)      |
+| Variable                      | Default                 | Description                                                             |
+| ----------------------------- | ----------------------- | ----------------------------------------------------------------------- |
+| `ENABLE_TELEMETRY`            | `true`                  | Enable/disable telemetry collection                                     |
+| `OTEL_SERVICE_NAME`           | `pdf-form-filler`       | Service name in traces                                                  |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OTLP collector endpoint (gRPC)                                          |
+| `OTEL_EXPORTER_OTLP_INSECURE` | `false`                 | Use secure connection (TLS). Set to `false` for local development only. |
 
 ### Configuration Examples
 
@@ -343,7 +344,7 @@ All exceptions are recorded with:
 
    ```sh
    # Test connectivity
-   curl http://localhost:4317
+   grpcurl localhost:4317
    ```
 
 3. **Check collector logs**
