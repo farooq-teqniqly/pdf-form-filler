@@ -262,6 +262,48 @@ def _radio_on_values(fields: dict[str, Any], group_name: str) -> list[str]:
     return _deduplicate_list(vals)
 
 
+def _update_radio_pages(writer: PdfWriter, group_name: str, value: str) -> None:
+    """Update all pages with the specified radio button value.
+
+    Parameters:
+    - writer: Target PdfWriter to update.
+    - group_name: Name of the radio button group.
+    - value: The value to set (should include leading slash if needed).
+    """
+    for p in writer.pages:
+        writer.update_page_form_field_values(p, {group_name: value})
+
+
+def _find_matching_option(opts: list[str], desired: str) -> str | None:
+    """Find the best matching option from available radio button options.
+
+    Matching priority:
+    1. Exact case-insensitive match
+    2. Case-insensitive substring match
+    3. First available option (fallback)
+
+    Returns:
+    - The matched option name, or None if no options available.
+    """
+    if not opts:
+        return None
+
+    dl = desired.lower()
+
+    # Exact match
+    for o in opts:
+        if o.lower() == dl:
+            return o
+
+    # Contains match
+    for o in opts:
+        if dl in o.lower():
+            return o
+
+    # Fallback to first option
+    return opts[0]
+
+
 def set_radio_group(
     writer: PdfWriter,
     fields: dict[str, Any],
@@ -282,26 +324,12 @@ def set_radio_group(
     if group_name not in fields:
         _debug(f"Requested radio group absent: '{group_name}'")
         return
+
     opts = _radio_on_values(fields, group_name)
-    dl = desired.strip().lower()
-    # exact match
-    for o in opts:
-        if o.lower() == dl:
-            for p in writer.pages:
-                writer.update_page_form_field_values(
-                    p, {group_name: NameObject(f"/{o}")}
-                )
-            return
-    # contains match
-    for o in opts:
-        if dl in o.lower():
-            for p in writer.pages:
-                writer.update_page_form_field_values(p, {group_name: f"/{o}"})
-            return
-    # fallback
-    if opts:
-        for p in writer.pages:
-            writer.update_page_form_field_values(p, {group_name: f"/{opts[0]}"})
+    matched = _find_matching_option(opts, desired.strip())
+
+    if matched:
+        _update_radio_pages(writer, group_name, f"/{matched}")
 
 
 def first_page(writer: PdfWriter):
