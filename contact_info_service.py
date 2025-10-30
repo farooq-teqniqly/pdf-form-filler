@@ -129,18 +129,17 @@ class ContactInfoService:
             Records both tokens_per_request histogram and tokens_total counter metrics
             with model and business_name attributes for filtering and analysis.
         """
-        usage = getattr(response, "usage")
-
-        if usage is None:
+        if not hasattr(response, "usage") or response.usage is None:
             return
 
-        tokens_used = getattr(usage, "total_tokens")
-
-        if tokens_used is None:
+        if (
+            not hasattr(response.usage, "total_tokens")
+            or response.usage.total_tokens is None
+        ):
             return
 
-        model = getattr(response, "model")
-
+        tokens_used = response.usage.total_tokens
+        model = response.model if hasattr(response, "model") else "unknown"
         metric_attributes = {"model": model, "business_name": business_name}
 
         tokens_per_request.record(tokens_used, metric_attributes)
