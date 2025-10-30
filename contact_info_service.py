@@ -1,6 +1,6 @@
 import json
 from typing import ClassVar
-from telemetry import tracer
+from telemetry import tracer, tokens_total, tokens_per_request
 from opentelemetry.trace import Status, StatusCode
 from jsonschema import validate, ValidationError
 import telemetry_constants
@@ -113,6 +113,39 @@ class ContactInfoService:
         Follow the provided JSON schema exactly.
         """
 
+    def _record_token_metrics(self, response, business_name: str):
+        """Record OpenAI token usage metrics for monitoring and billing.
+
+        Extracts token usage information from the OpenAI API response and records
+        both histogram (per-request distribution) and counter (cumulative total)
+        metrics for observability and cost tracking.
+
+        Args:
+            response: The OpenAI API response object containing usage information.
+            business_name (str): The business name being looked up, used as a metric attribute.
+
+        Note:
+            Safely handles cases where usage information is not available in the response.
+            Records both tokens_per_request histogram and tokens_total counter metrics
+            with model and business_name attributes for filtering and analysis.
+        """
+        usage = getattr(response, "usage")
+
+        if usage is None:
+            return
+
+        tokens_used = getattr(usage, "total_tokens")
+
+        if tokens_used is None:
+            return
+
+        model = getattr(response, "model")
+
+        metric_attributes = {"model": model, "business_name": business_name}
+
+        tokens_per_request.record(tokens_used, metric_attributes)
+        tokens_total.add(tokens_used, metric_attributes)
+
     def get_contact_info(self, business_name: str):
         """Retrieve contact information for a company using OpenAI.
 
@@ -154,6 +187,9 @@ class ContactInfoService:
                     text=self.__CONTACT_INFO_FORMAT,
                     metadata={"purpose": "esd_business_name_lookup"},
                 )
+
+                self._record_token_metrics(response, business_name)
+
             except Exception as e:
                 span.set_attribute(telemetry_constants.SPAN_ATTR_LOOKUP_SUCCESS, False)
                 span.set_attribute(
