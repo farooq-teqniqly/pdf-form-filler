@@ -221,3 +221,15 @@ contact_enrichment_duration = meter.create_histogram(
     description="Duration of contact enrichment operations",
     unit="ms",
 )
+
+tokens_per_request = meter.create_histogram(
+    name="openai.tokens.per_request",
+    description="Tokens used per OpenAI request",
+    unit="tokens",
+)
+
+tokens_total = meter.create_counter(
+    name="openai.tokens.total",
+    description="Total tokens consumed for OpenAI requests",
+    unit="tokens",
+)
