@@ -1,5 +1,7 @@
 # PDF Form Filler
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=farooq-teqniqly_pdf-form-filler&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=farooq-teqniqly_pdf-form-filler)
+
 PDF Form Filler is a command-line tool for automatically filling out weekly job-search log PDF forms using structured YAML data. It leverages AI to look up and fill company contact information based on business names, making it easy to generate completed forms for submission. Designed for quick setup and use by developers.
 
 ## Table of Contents
